@@ -55,6 +55,9 @@ struct RemotePlayer {
     int8_t doorFromArea = 0;  // the area it was in then
     bool goneInDoor = false;    // it turned from the door on its way in: out of sight until it is inside
     uint64_t walkSetMs = 0;     // its body's walk set last asked for (KeepWalkSet)
+    // its own CPlayerPedData (0xAC bytes: chosen weapon, look pitch, fight moves, wanted, clothes...): every remote
+    // player is made in the same CWorld::Players slot, whose data they all shared (see Players.cpp)
+    uint8_t* ownData = nullptr;
 };
 
 class Players : public Module {
