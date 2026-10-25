@@ -1,6 +1,6 @@
 #pragma once
-// A real coop-server.exe for one test: its own port, its own data folder and server.ini (internet = 0: no UPnP, STUN or
-// invite codes on a test machine), stopped when the test is over.
+// A real coop-server.exe for one test: its own port, its own data folder and server.ini (internet = 0 unless the test
+// is about it: no UPnP, STUN or invite codes on a test machine), stopped when the test is over.
 #include <windows.h>
 
 #include <cstdint>
@@ -12,6 +12,8 @@ struct ServerOptions {
     std::string password;
     int maxPlayers = 2;
     std::string hostName;  // server.ini's "host": the role waits for this nickname
+    bool fakeTurn = false;  // internet = 1 with a TURN relay that refuses the login (FakeTurn): turn below is set for it
+    std::string turn;       // server.ini's "turn"
 };
 
 class ServerProcess {

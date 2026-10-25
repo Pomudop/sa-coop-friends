@@ -81,6 +81,9 @@ void Server::Run() {
             SendInvite(nullptr);
             WriteFileBytes(m_cfg.dataDir + L"invite.txt", code.data(), code.size());  // for dedicated servers
         }
+        if (m_internet.TakeRelayFailure(m_relayFailure, m_relayFailureEn))
+            for (auto& p : m_players)
+                if (p.joined && p.isHost) TellRelayFailure(p);
         std::vector<std::string> cmds;
         {
             std::lock_guard<std::mutex> lock(m_cmdMutex);
@@ -365,6 +368,7 @@ void Server::HandleHello(Player& p, Reader& r) {
 
     SendProfile(p);
     SendInvite(&p);
+    if (p.isHost && !m_relayFailure.empty()) TellRelayFailure(p);  // it failed before the host's game connected
     LOGI("%s вошёл как игрок %d%s (версия %s)", p.name.c_str(), p.id, p.isHost ? " [ХОСТ]" : "", h.version.c_str());
     SendChat(nullptr, kServerId, kColorInfo, Format("%s зашёл в игру%s.", p.name.c_str(), p.isHost ? " (хост)" : ""),
              Format("%s joined the game%s.", p.name.c_str(), p.isHost ? " (host)" : ""));
@@ -670,6 +674,17 @@ void Server::SendInvite(Player* to) {
     w.Str(code, 32);
     if (to) net::Send(to->peer, CH_RELIABLE, w);
     else Broadcast(CH_RELIABLE, w);
+}
+
+// What the host can do about it: the relay is for friends behind a NAT that punching does not open
+void Server::TellRelayFailure(Player& host) {
+    SendChat(&host, kServerId, kColorError,
+             "Ретранслятор не работает: " + m_relayFailure +
+                 ". Друзья за сложным NAT не подключатся по коду: проверьте строку turn = в server.ini, пробросьте порт "
+                 "или играйте через выделенный сервер.",
+             "The relay does not work: " + m_relayFailureEn +
+                 ". Friends behind a strict NAT will not connect with the code: check the turn = line of server.ini, "
+                 "forward the port or play through a dedicated server.");
 }
 
 // A profile goes to the disk on a thread of its own: flushed for a power cut, its write waited for the disk on the

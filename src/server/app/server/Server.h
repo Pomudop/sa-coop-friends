@@ -99,6 +99,7 @@ private:
     bool LoadWorld(const std::wstring& path, const std::string& label);
 
     void SendInvite(Player* to);  // to == nullptr: everyone
+    void TellRelayFailure(Player& host);
 
     Config m_cfg;
     ENetHost* m_host = nullptr;
@@ -111,6 +112,7 @@ private:
     std::vector<uint8_t> m_worldWaiters;   // player ids waiting for the world save
     uint64_t m_worldWantedTime = 0;        // when the host was asked for a fresh snapshot (0 = not asked)
     bool m_prologue = false;               // the host plays a new game's prologue: partners wait for its end
+    std::string m_relayFailure, m_relayFailureEn;  // why the TURN relay does not work (told to the host)
 
     std::mutex m_cmdMutex;
     std::vector<std::string> m_cmdQueue;

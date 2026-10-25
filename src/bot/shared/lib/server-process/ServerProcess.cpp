@@ -12,8 +12,9 @@ bool ServerProcess::Start(const std::wstring& exe, const std::wstring& dir, uint
     std::filesystem::remove_all(dir, ec);  // a previous run's profiles and world would change what the server does
     EnsureDirectory(dir);
     std::string ini = Format("[server]\r\nname = coop-bot test\r\nport = %u\r\npassword = %s\r\nmax_players = %d\r\n"
-                             "host = %s\r\ninternet = 0\r\n",
-                             port, opt.password.c_str(), opt.maxPlayers, opt.hostName.c_str());
+                             "host = %s\r\ninternet = %d\r\nturn = %s\r\n",
+                             port, opt.password.c_str(), opt.maxPlayers, opt.hostName.c_str(), opt.turn.empty() ? 0 : 1,
+                             opt.turn.c_str());
     WriteFileBytes(dir + L"server.ini", ini.data(), ini.size(), false);
     m_log = dir + L"data\\server.log";
 

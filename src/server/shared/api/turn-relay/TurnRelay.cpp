@@ -139,6 +139,10 @@ void TurnRelay::Start(const std::string& spec, uint16_t gamePort) {
     m_spec = spec;
     m_gamePort = gamePort;
     m_quit = false;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_status = Status::Starting;
+    }
     m_thread = std::thread(&TurnRelay::Thread, this);
 }
 
@@ -157,16 +161,43 @@ nat::Endpoint TurnRelay::Relayed() {
     return m_relayed;
 }
 
+TurnRelay::Status TurnRelay::GetStatus(std::string* why, std::string* whyEn) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (why) *why = m_why;
+    if (whyEn) *whyEn = m_whyEn;
+    return m_status;
+}
+
+void TurnRelay::Fail(const std::string& why, const std::string& whyEn) {
+    LOGW("TURN: %s", why.c_str());
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_status = Status::Failed;
+    m_why = why;
+    m_whyEn = whyEn;
+}
+
 bool TurnRelay::Credentials() {
     std::string port = "3478";
     if (m_spec.rfind("metered:", 0) == 0) {
         // free metered.ca account: the REST API hands out TURN credentials for the app
         size_t c = m_spec.find(':', 8);
-        if (c == std::string::npos) return false;
+        if (c == std::string::npos) {
+            Fail("в строке turn = нет API-ключа: нужно turn = metered:<имя приложения>:<API-ключ>",
+                 "the turn = line has no API key: it needs turn = metered:<app name>:<API key>");
+            return false;
+        }
         std::string app = m_spec.substr(8, c - 8), key = m_spec.substr(c + 1);
         nat::HttpResponse r = nat::HttpRequest("GET", "https://" + app + ".metered.live/api/v1/turn/credentials?apiKey=" + key);
+        if (r.status == 401 || r.status == 403) {
+            Fail(Format("metered.ca отклонил API-ключ (HTTP %d). Проверьте имя приложения и ключ в строке turn =", r.status),
+                 Format("metered.ca refused the API key (HTTP %d). Check the app name and the key in the turn = line", r.status));
+            return false;
+        }
         if (r.status != 200) {
-            LOGW("TURN: metered.ca не выдал учётные данные (HTTP %d)", r.status);
+            Fail(r.status ? Format("metered.ca не выдал учётные данные (HTTP %d)", r.status)
+                          : std::string("metered.ca недоступен: нет интернета или сайт не открывается"),
+                 r.status ? Format("metered.ca gave no credentials (HTTP %d)", r.status)
+                          : std::string("metered.ca is out of reach: no internet, or the site does not open"));
             return false;
         }
         for (size_t at = 0; (at = r.body.find('{', at)) != std::string::npos; ++at) {
@@ -181,21 +212,28 @@ bool TurnRelay::Credentials() {
             m_password = JsonStr(obj, "credential");
             break;
         }
+        if (m_host.empty()) {
+            Fail("metered.ca не прислал адрес TURN-сервера для UDP", "metered.ca sent no TURN server address for UDP");
+            return false;
+        }
     } else if (m_spec.rfind("turn:", 0) == 0) {
         std::vector<std::string> p = Split(m_spec.substr(5), ':');
-        if (p.size() < 4) return false;
-        m_host = p[0], port = p[1], m_user = p[2];
-        m_password = m_spec.substr(5 + p[0].size() + p[1].size() + p[2].size() + 3);  // may contain ':'
+        if (p.size() >= 4) {
+            m_host = p[0], port = p[1], m_user = p[2];
+            m_password = m_spec.substr(5 + p[0].size() + p[1].size() + p[2].size() + 3);  // may contain ':'
+        }
     }
     if (m_host.empty() || m_user.empty()) {
-        LOGW("TURN: непонятная настройка turn = %s", m_spec.c_str());
+        Fail("непонятная строка turn = в server.ini: нужно metered:<приложение>:<ключ> или turn:<адрес>:<порт>:<логин>:<пароль>",
+             "the turn = line of server.ini is not understood: it needs metered:<app>:<key> or "
+             "turn:<address>:<port>:<user>:<password>");
         return false;
     }
     addrinfo hints{}, *res = nullptr;
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     if (getaddrinfo(m_host.c_str(), port.c_str(), &hints, &res) != 0 || !res) {
-        LOGW("TURN: сервер %s не найден", m_host.c_str());
+        Fail(Format("TURN-сервер %s не найден", m_host.c_str()), Format("TURN server %s not found", m_host.c_str()));
         return false;
     }
     m_server = *(sockaddr_in*)res->ai_addr;
@@ -204,6 +242,7 @@ bool TurnRelay::Credentials() {
 }
 
 bool TurnRelay::Request(uint16_t method, const std::vector<Bytes>& attrs, Bytes* response) {
+    m_lastError = -1;
     for (int attempt = 0; attempt < 3 && !m_quit; ++attempt) {
         uint8_t tx[12];
         NewTx(tx);
@@ -233,9 +272,11 @@ bool TurnRelay::Request(uint16_t method, const std::vector<Bytes>& attrs, Bytes*
             }
             if ((p.type & 0x0110) == 0x0100) {  // success response
                 if (response) response->assign(buf, buf + n);
+                m_lastError = 0;
                 return true;
             }
             int code = ErrorCode(p);
+            m_lastError = code;
             if ((code == 401 || code == 438) && p.attrs.count(A_NONCE)) {  // (new) challenge: answer it
                 m_nonce.assign(p.attrs[A_NONCE].begin(), p.attrs[A_NONCE].end());
                 if (p.attrs.count(A_REALM)) m_realm.assign(p.attrs[A_REALM].begin(), p.attrs[A_REALM].end());
@@ -312,7 +353,16 @@ void TurnRelay::Thread() {
     BigBuffers(m_sock);
     Bytes resp;
     if (!Request(ALLOCATE, {Attr(A_TRANSPORT, "\x11\0\0\0", 4)}, &resp)) {
-        LOGW("TURN: не удалось получить адрес ретранслятора у %s", m_host.c_str());
+        if (!m_quit) {
+            const char* host = m_host.c_str();
+            if (m_lastError == 401)
+                Fail(Format("TURN-сервер %s отклонил логин и пароль", host), Format("TURN server %s refused the login", host));
+            else if (m_lastError < 0)
+                Fail(Format("TURN-сервер %s не отвечает", host), Format("TURN server %s does not answer", host));
+            else
+                Fail(Format("TURN-сервер %s отказал в адресе ретранслятора (ошибка %d)", host, m_lastError),
+                     Format("TURN server %s refused a relay address (error %d)", host, m_lastError));
+        }
         closesocket(m_sock);
         return;
     }
@@ -323,9 +373,15 @@ void TurnRelay::Thread() {
         const Bytes& l = p.attrs[A_LIFETIME];
         m_lifetime = (uint32_t)l[0] << 24 | l[1] << 16 | l[2] << 8 | l[3];
     }
-    if (!ParseXorAddr(p.attrs[A_RELAYED], relayed)) return;
+    if (!ParseXorAddr(p.attrs[A_RELAYED], relayed)) {
+        Fail(Format("TURN-сервер %s прислал адрес ретранслятора, который не прочитать", m_host.c_str()),
+             Format("TURN server %s sent a relay address that cannot be read", m_host.c_str()));
+        closesocket(m_sock);
+        return;
+    }
     {
         std::lock_guard<std::mutex> lock(m_mutex);
+        m_status = Status::Ready;
         m_relayed.ip = relayed.sin_addr.s_addr;
         m_relayed.port = ntohs(relayed.sin_port);
         LOGI("TURN: адрес ретранслятора %s (сервер %s)", m_relayed.ToString().c_str(), m_host.c_str());

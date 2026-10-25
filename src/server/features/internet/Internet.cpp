@@ -48,6 +48,12 @@ bool Internet::TakeNewCode(std::string& code) {
     return true;
 }
 
+bool Internet::TakeRelayFailure(std::string& why, std::string& whyEn) {
+    if (!m_turnEnabled || m_turnFailureTaken || m_turn.GetStatus(&why, &whyEn) != TurnRelay::Status::Failed) return false;
+    m_turnFailureTaken = true;
+    return true;
+}
+
 // STUN answers and punch packets arrive on the game port: they never reach ENet's protocol code
 int ENET_CALLBACK Internet::Intercept(ENetHost* host, ENetEvent*) {
     Internet* self = g_self;
@@ -111,9 +117,14 @@ void Internet::Worker() {
         std::lock_guard<std::mutex> lock(m_mutex);
         ep = m_mapped;
     }
-    // the relay address goes to the signalling channel (or into the code when nothing else works)
+    // the relay address goes to the signalling channel (or into the code when nothing else works). Only then is it
+    // waited for, and not past its failure: the code came 15 s late every time, also when the relay had failed (#64)
     nat::Endpoint relay;
-    for (int i = 0; i < 150 && m_turnEnabled && !m_quit && !(relay = m_turn.Relayed()).Valid(); ++i) Sleep(100);
+    auto relayPending = [&] {
+        return m_turnEnabled && !(relay = m_turn.Relayed()).Valid() && m_turn.GetStatus() == TurnRelay::Status::Starting;
+    };
+    for (int i = 0; i < 150 && !ep.Valid() && !m_quit && relayPending(); ++i) Sleep(100);
+    relay = m_turn.Relayed();
     if (!ep.Valid()) ep = relay;
     if (!ep.Valid()) {
         LOGW("Внешний адрес не определён (нет интернета?). Подключиться можно только по локальной сети или по IP");
@@ -130,15 +141,23 @@ void Internet::Worker() {
 
     // 3. joiners behind NAT announce their endpoint; we answer with packets that open our NAT for them
     m_signal.Start(nat::kDefaultSignalUrl, nat::SignalTopic(code), [this](const std::string& msg) { QueuePunch(msg); });
-    if (relay.Valid() && relay.ip != ep.ip) {
-        nat::SignalPublish(nat::kDefaultSignalUrl, nat::SignalTopic(code), "RELAY " + relay.ToString());
-        LOGI("Ретранслятор для друзей за любым NAT: %s", relay.ToString().c_str());
-    }
 
-    // 4. renew a finite UPnP lease while the server runs
-    for (uint64_t renewAt = NowMs() + (uint64_t)m_upnp.leaseSeconds * 500; m_upnp.ok && m_upnp.leaseSeconds > 0 && !m_quit;) {
+    // 4. the relay's address once it has one (a joiner reads the channel's history when it connects), and a finite
+    // UPnP lease renewed while the server runs
+    bool relayDone = !m_turnEnabled;
+    for (uint64_t renewAt = NowMs() + (uint64_t)m_upnp.leaseSeconds * 500; !m_quit;) {
+        if (!relayDone && (relay = m_turn.Relayed()).Valid()) {
+            relayDone = true;
+            if (relay.ip != ep.ip) {
+                nat::SignalPublish(nat::kDefaultSignalUrl, nat::SignalTopic(code), "RELAY " + relay.ToString());
+                LOGI("Ретранслятор для друзей за любым NAT: %s", relay.ToString().c_str());
+            }
+        }
+        if (!relayDone && m_turn.GetStatus() == TurnRelay::Status::Failed) relayDone = true;
+        bool renew = m_upnp.ok && m_upnp.leaseSeconds > 0;
+        if (relayDone && !renew) break;
         Sleep(500);
-        if (NowMs() < renewAt) continue;
+        if (!renew || NowMs() < renewAt) continue;
         nat::UpnpResult again = nat::UpnpMapPort(m_port, "SA:COOP server");
         if (again.ok) m_upnp = again;
         renewAt = NowMs() + (uint64_t)m_upnp.leaseSeconds * 500;
