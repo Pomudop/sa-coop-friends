@@ -44,7 +44,7 @@ struct ClientConfig {
     int speakerDevice = -1;
 
     // [keys]
-    int chatKey = 0x54;               // T
+    int chatKey = 0x75;               // F6: T took the cheat codes with a T in them (AIWPRTON, JUMPJET), UX-01
     int passengerKey = 0x47;          // G
     int playerListKey = 0x71;         // F2
 
