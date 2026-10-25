@@ -43,6 +43,11 @@ jobs:
       - name: Build the archive
         run: python tools/build.py dist
 
+      # fork: the server tests (INF-05, INF-07); build.py has built coop-bot.exe with the rest
+      - name: Server tests (coop-bot)
+        shell: pwsh
+        run: ./tools/fork/bot-tests.ps1
+
       - uses: actions/upload-artifact@v4
         with:
           name: SA-COOP

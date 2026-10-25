@@ -88,7 +88,17 @@ def targets(extra=()):
         "libs": ["-lkernel32", "-luser32"],
         "ldflags": [str(ROOT / "src" / "loader" / "app" / "entry" / "vorbisFile.def")],
     }
-    return {"client": client, "server": server, "loader": loader}
+    # fork: coop-bot.exe, fake players for the server tests (INF-05); not part of the players' package
+    bot = {
+        "name": "bot", "kind": "exe", "out": "coop-bot.exe",
+        "sources": glob("src/bot", "**/*.cpp"),
+        "includes": COMMON_INC + ["src/bot"],
+        "defines": ["-DCOOP_BOT"], "cflags": [],
+        "deps": [common, ENET],
+        "libs": ["-lws2_32", "-lwinmm", "-lwinhttp", "-lbcrypt"],  # src/common links whole, its NAT code included
+        "ldflags": ["-municode"],
+    }
+    return {"client": client, "server": server, "loader": loader, "bot": bot}
 
 
 def parse_depfile(text: str):
