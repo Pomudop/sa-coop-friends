@@ -2,10 +2,13 @@
 #
 #   powershell -ExecutionPolicy Bypass -File tools/fork/stand.ps1 -Game "D:\Games\GTA San Andreas" [-Count 4]
 #       [-Root D:\Games\gta-stand] [-Save "...\GTASAsf1.b"] [-Package dist\SA-COOP] [-NoLaunch] [-Width 960 -Height 540]
+#       [-HostAddress 26.x.x.x]
 #
 # -Game     a clean GTA San Andreas 1.0 US (gta_sa.exe of 14 383 616 bytes); it is only read.
 # -Root     where the copies P1..P4 go, on the same disk as the game (big files are hard links: almost no space).
 # -Save     a save the host (P1) loads by itself; without it the host picks one in the menu.
+# -HostAddress  the address P2..P4 join by: 127.0.0.1 by default; this PC's Radmin VPN or LAN address tests that path
+#           (CONN-01: the server is reached through that adapter, the firewall rules for it apply).
 # -Package  the mod to install: the unpacked SA-COOP.zip of a release or of CI, or dist\SA-COOP after a local build.
 # Run it again after a new build: the copies stay, the mod and the settings are put in afresh.
 param(
@@ -16,7 +19,8 @@ param(
     [string]$Package = "",
     [switch]$NoLaunch,
     [int]$Width = 960,
-    [int]$Height = 540
+    [int]$Height = 540,
+    [string]$HostAddress = "127.0.0.1"
 )
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -76,7 +80,7 @@ foreach ($n in 1..$Count) {
     if ($host1 -and $Save) { Copy-Item $Save (Join-Path $user "GTASAsf1.b") -Force }
     $x = (($n - 1) % 2) * $Width
     $y = [math]::Floor(($n - 1) / 2) * ($Height + 32)
-    $connect = if ($host1) { "mode = host`r`nload_slot = $(if ($Save) { 1 } else { 0 })" } else { "mode = join`r`nhost = 127.0.0.1" }
+    $connect = if ($host1) { "mode = host`r`nload_slot = $(if ($Save) { 1 } else { 0 })" } else { "mode = join`r`nhost = $HostAddress" }
     $ini = @"
 ; written by tools/fork/stand.ps1: run it again to put these back
 [player]

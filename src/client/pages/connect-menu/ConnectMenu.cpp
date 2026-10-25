@@ -13,6 +13,7 @@
 #include "shared/config/Config.h"
 #include "shared/game/Game.h"
 #include "shared/lib/core/Core.h"
+#include "shared/lib/net-addresses/NetAddresses.h"
 #include "shared/ui/chat/Chat.h"
 #include "shared/ui/input/Input.h"
 #include "shared/ui/renderer/Renderer.h"
@@ -34,6 +35,9 @@ int g_slotIndex = 0;  // index into the slot list
 std::vector<flow::SaveSlotInfo> g_slots;
 uint64_t g_slotsTime = 0;
 uint64_t g_copiedMs = 0;
+std::string g_copiedWhat;                    // what the last copy button put on the clipboard
+std::vector<netaddr::LocalAddress> g_addrs;  // this PC's Radmin VPN / LAN addresses, for the host (CONN-01)
+uint64_t g_addrsTime = 0;
 
 void CopyToClipboard(const std::string& utf8) {
     std::wstring text = Utf8ToWide(utf8);
@@ -43,7 +47,7 @@ void CopyToClipboard(const std::string& utf8) {
         memcpy(GlobalLock(mem), text.c_str(), (text.size() + 1) * sizeof(wchar_t));
         GlobalUnlock(mem);
         if (!SetClipboardData(CF_UNICODETEXT, mem)) GlobalFree(mem);
-        else g_copiedMs = NowMs();
+        else g_copiedMs = NowMs(), g_copiedWhat = utf8;
     }
     CloseClipboard();
 }
@@ -198,12 +202,31 @@ void RenderConnectMenu() {
             } else {
                 g.Text(FONT_BIG, cx, cy, code, kGold, TEXT_OUTLINE);
                 cy += bh + 2 * s;
-                bool copied = NowMs() - g_copiedMs < 1500;
+                bool copied = NowMs() - g_copiedMs < 1500 && g_copiedWhat == code;
                 if (item("copy", cx, cy, copied ? TR("Скопировано", "Copied") : TR("Скопировать", "Copy"), true, copied))
                     CopyToClipboard(code);
                 cy += rowH;
             }
             cy += 20 * s;
+            // CONN-01: a friend in the same Radmin VPN (Hamachi, ZeroTier) network or the same home network joins by this
+            // PC's address there, without the invite code: no NAT to get through, nothing to set up on the router
+            if (NowMs() - g_addrsTime > 3000) g_addrs = netaddr::List(), g_addrsTime = NowMs();
+            if (!g_addrs.empty()) {
+                caption(cx, TR("Или по адресу: Radmin VPN, локальная сеть", "Or by address: Radmin VPN, local network"));
+                cy += ch + 6 * s;
+                static const char* ids[] = {"addr0", "addr1", "addr2", "addr3"};
+                std::string port = Cfg().port == kDefaultPort ? "" : Format(":%d", Cfg().port);
+                for (size_t i = 0; i < g_addrs.size() && i < 3; ++i) {
+                    std::string text = g_addrs[i].ip + port;
+                    g.Text(FONT_MENU_SMALL, cx, cy + (rowH - ch) * 0.5f, netaddr::KindName(g_addrs[i].kind), kSaMuted);
+                    g.Text(FONT_NORMAL, cx + 230 * s, cy + (rowH - lh) * 0.5f, text, kText, TEXT_SHADOW);
+                    bool done = NowMs() - g_copiedMs < 1500 && g_copiedWhat == text;
+                    const char* label = done ? TR("Скопировано", "Copied") : TR("Скопировать", "Copy");
+                    if (item(ids[i], cx + cw - g.TextWidth(FONT_MENU, label), cy, label, true, done)) CopyToClipboard(text);
+                    cy += rowH;
+                }
+                cy += 14 * s;
+            }
         }
         caption(cx, Format(TR("Игроки: %d", "Players: %d"), 1 + (int)net.Peers().size()));
         cy += ch + 8 * s;
@@ -313,7 +336,13 @@ void RenderConnectMenu() {
                        can, true, true) ||
              (enter && can)) &&
             ApplyNick()) {
-            if (g_tab == 0) flow::Join(Trim(Narrow(g_addr)), PortValue(), Narrow(g_password));
+            if (g_tab == 0) {
+                // "26.1.2.3:7788" from the host's copy button: the port comes with the address (CONN-01)
+                std::string addr = Trim(Narrow(g_addr)), host;
+                uint16_t port = PortValue();
+                if (netaddr::SplitHostPort(addr, host, port)) addr = host;
+                flow::Join(addr, port, Narrow(g_password));
+            }
             else flow::Host(inGame ? 0 : hostSlot, PortValue(), Narrow(g_password));
         }
         cy += bh + 10 * s + 14 * s;
