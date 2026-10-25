@@ -916,8 +916,9 @@ void Vehicles::OnPostProcess() {
     CPlayerPed* me = FindPlayerPed(0);
     uint64_t now = NowMs();
     KeepCarWhileInside(me);
-    for (auto& [v, to] : m_giveAway)  // still ours and still free to go
-        if (NetVehicle* nv = IsVehicleValid(v) ? Find(v) : nullptr; nv && !IsMirror(*nv) && CanGiveAway(v)) GiveAway(*nv, to);
+    for (auto& [v, to] : m_giveAway)  // still ours, still the same car (its pool slot may hold a new one) and free to go
+        if (NetVehicle* nv = IsVehicleValid(v) ? Find(v) : nullptr; nv && Alive(*nv) && !IsMirror(*nv) && CanGiveAway(v))
+            GiveAway(*nv, to);
     m_giveAway.clear();
     // a trailer or a car this player's vehicle tows is simulated here from now on
     if (CVehicle* mine = me->InVehicle() && me->Vehicle() && me->Vehicle()->Driver() == me ? me->Vehicle() : nullptr) {
@@ -930,6 +931,10 @@ void Vehicles::OnPostProcess() {
         ScanTraffic();
     }
     for (auto& [id, nv] : m_byId) {
+        // CGame::Process ran since OnPreProcess checked them: a car the game deleted in this frame (a mission's cleanup,
+        // the population's) left its pool slot free or to a new car, and the writes below went there (STB-01). By the
+        // handle, which changes when the slot is reused; OnPreProcess forgets it next frame.
+        if (!Alive(nv)) continue;
         if (IsMirror(nv)) {
             // keep the visual controls after the physics step (wheels, brake lights)
             if (nv.hasState) {
