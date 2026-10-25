@@ -1,0 +1,24 @@
+# Fork only: fails if a game file gets into git or the original author's copyright is lost (LEGAL.md).
+# Kept apart from build.yml so that merges from upstream do not conflict.
+name: fork-guard
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: No game files, author's copyright in place
+        run: python -I tools/fork/guard_check.py

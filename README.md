@@ -1,6 +1,3 @@
-> **SA:COOP Friends** — форк для игры с друзьями до четырёх игроков. Проект вдохновлён работой
-> [Karimov-Akbar](https://github.com/Karimov-Akbar) и основан на его [SA:COOP](https://github.com/Karimov-Akbar/sa-coop)
-> (MIT, см. [NOTICE.md](NOTICE.md)). План и задачи форка — в [docs/fork/](docs/fork/ROADMAP.md).
 <p align="center">
   <img src="docs/images/logo.png" alt="SA:COOP" width="440">
 </p>

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ошибка есть и в оригинальном SA:COOP
+    url: https://github.com/Karimov-Akbar/sa-coop/issues
+    about: Если ошибка повторяется на сборке автора, сообщите о ней автору оригинала. Ошибки форка — здесь.

@@ -9,3 +9,11 @@ __pycache__/
 # local data that is not part of the project: the game's own files and the reverse engineering notes
 /game_files/
 /re/
+
+# fork: the game's files never go into git, wherever they lie (LEGAL.md, tools/fork/guard_check.py)
+gta_sa.exe
+*.img
+*.scm
+GTASAsf*.b
+gta_sa.pdb
+gta_sa_symbols.txt

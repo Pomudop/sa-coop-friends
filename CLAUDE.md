@@ -1,4 +1,4 @@
-# SA:COOP fork — notes for Claude
+# SA:COOP Friends (fork of SA:COOP) — notes for Claude
 
 Fork of github.com/Karimov-Akbar/sa-coop (MIT): a GTA San Andreas 1.0 US co-op mod. The fork aims at up to 4 friends,
 reliable connections and fewer drops to the menu. The owner writes in Russian: answer in Russian, keep docs in Russian
@@ -23,3 +23,7 @@ Rules:
   verified by the owner on the multi-copy stand. Say which was done.
 - Keep fork-only docs in `docs/fork/`; behaviour meant for upstream goes into `docs/ARCHITECTURE.md`.
 - Update `docs/fork/KNOWLEDGE.md` and the backlog when something new is learned or a task is done.
+- Legal (LEGAL.md, NOTICE.md): never commit game files, data extracted from them, decompiled or leaked Rockstar code
+  or `gta_sa.pdb` symbols; keep `LICENSE` and the author's history untouched; call the project a fork and link the
+  original; credit community PR authors. `python -I tools/fork/guard_check.py` must pass.
+- The fork's front page is `.github/README.md`; the author's `README.md` stays as upstream has it.

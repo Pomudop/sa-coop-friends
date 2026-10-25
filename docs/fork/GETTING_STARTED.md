@@ -1,4 +1,4 @@
-# Как начать работу с форком SA:COOP
+# Как начать работу с SA:COOP Friends
 
 Мануал для тех, кто пишет код форка или помогает его проверять. Что и в каком порядке делаем — в
 [ROADMAP.md](ROADMAP.md), список задач — в [BACKLOG.md](BACKLOG.md). Как устроен сам мод, подробно описал его автор
@@ -56,12 +56,12 @@
 бесплатных тарифов проверены 24 октября 2026 года и меняются: перед выбором сверьтесь со страницами сервисов.
 
 ## Форк и клон
-1. На странице [Karimov-Akbar/sa-coop](https://github.com/Karimov-Akbar/sa-coop) нажать Fork.
+1. На странице [Karimov-Akbar/sa-coop](https://github.com/Karimov-Akbar/sa-coop) нажать Fork и в поле Repository name указать `sa-coop-friends`.
 2. В форке на вкладке Actions включить workflows.
 3. В Settings → Branches защитить `main`: только через PR и с зелёной сборкой.
 
 ```bash
-git clone https://github.com/<ваш-логин>/sa-coop.git
+git clone https://github.com/<ваш-логин>/sa-coop-friends.git
 ```
 
 ```bash
