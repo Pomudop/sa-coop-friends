@@ -286,24 +286,34 @@ void ReservedHost(Run& r) {
     r.Check(r.WaitFor(announced, 2000), "Alpha не узнал, что хост вошёл");
 }
 
-// NET-01: the old connection of a nickname is let go before the password is checked
-void WrongPasswordSameNick(Run& r) {
+// NET-01: every check of a hello comes before the old connection of its nickname is let go
+void PasswordBeforeReplace(Run& r) {
     auto& a = r.Bot("Alpha");
     a.hello.password = "secret";
     auto& b = r.Bot("Bravo");
     b.hello.password = "secret";
     if (!r.JoinOrFail(a) || !r.JoinOrFail(b)) return;
+    // a live player's nickname with a wrong password: told the password is wrong, not that the nickname is here
+    auto& guess = r.Bot("Alpha");
+    guess.hello.password = "wrong";
+    r.Check(!r.Join(guess) && Contains(guess.RejectReason(), "неверный пароль"),
+            "подключение с ником живого игрока и неверным паролем получило не «неверный пароль»");
+    uint8_t oldId = a.Id();
     r.Pause(a);  // Alpha's line lags: the server hears nothing from it for a while
     r.Pump(3500);
     auto& intruder = r.Bot("Alpha");
     intruder.hello.password = "wrong";
     r.Check(!r.Join(intruder) && Contains(intruder.RejectReason(), "неверный пароль"), "чужой с неверным паролем вошёл");
     r.Pump(1000);
-    r.Check(!b.LeftId(a.Id()), "подключение с ником Alpha и неверным паролем выкинуло настоящего Alpha");
-    r.Resume(a);
+    r.Check(!b.LeftId(oldId), "подключение с ником Alpha и неверным паролем выкинуло настоящего Alpha");
+    // the real Alpha, its game restarted, with the right password: the hung connection gives way
+    auto& back = r.Bot("Alpha");
+    back.hello.password = "secret";
+    if (r.Check(r.Join(back), "Alpha с верным паролем не заменил своё зависшее соединение: " + back.RejectReason()))
+        r.Check(r.WaitFor([&] { return b.LeftId(oldId); }, 2000), "Bravo не узнал, что старое соединение Alpha закрыто");
 }
 
-// NET-02: a hello with protocol 0 passes the version check
+// NET-02: a hello without a version is refused
 void ProtocolZero(Run& r) {
     auto& z = r.Bot("Zero");
     z.hello.protocol = 0;
@@ -329,9 +339,9 @@ const std::vector<Entry>& Entries() {
         {{"crash-return", "вылет и возвращение под тем же ником", nullptr, true}, {}, CrashReturn},
         {{"host-change", "хост вышел: роль переходит оставшемуся", nullptr, true}, {}, HostChange},
         {{"reserved-host", "host = в server.ini: роль ждёт этот ник", nullptr, true}, {"", 2, "Boss"}, ReservedHost},
-        {{"net01-password-after-replace", "неверный пароль с ником зависшего игрока", "NET-01", true}, {"secret"},
-         WrongPasswordSameNick},
-        {{"net02-protocol-zero", "приветствие с протоколом 0", "NET-02", true}, {}, ProtocolZero},
+        {{"password-before-replace", "NET-01: неверный пароль с ником зависшего игрока, верный — заменяет", nullptr, true},
+         {"secret"}, PasswordBeforeReplace},
+        {{"protocol-zero", "NET-02: приветствие без версии", nullptr, true}, {}, ProtocolZero},
     };
     return list;
 }

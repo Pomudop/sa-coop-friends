@@ -16,7 +16,7 @@ Rules:
 - Build: `powershell -ExecutionPolicy Bypass -File tools/get-toolchain.ps1`, then `python tools/build.py dist`.
   Checks: `python tools/fsd_check.py`, `python tools/i18n_check.py`.
 - `COOP_VERSION_STR` must be digits and dots only (build.py parses it). Fork versions are `0.3.0.N`.
-- Any protocol change bumps the fork protocol number (`1000 + upstream protocol`, BACKLOG INF-03).
+- Any protocol change bumps `kForkProtocolRevision` in `Version.h` (protocol = 1000 + 19 + revision, BACKLOG INF-03).
 - Follow the author's style: FSD layers, `TR("ru", "en")` for every game text, comments explain why and name engine
   functions next to addresses, network data goes through `Reader` and is validated before touching the engine.
 - Claude cannot run the game. Network/server changes are verified with the bot (`coop-bot.exe`, scenarios in
@@ -25,7 +25,10 @@ Rules:
   bug gets a scenario first. Game changes are verified by the owner on the multi-copy stand. Say which was done.
 - Building on Linux: llvm-mingw `20261006` `ucrt-ubuntu-22.04-x86_64`, with wrapper scripts named
   `toolchain/llvm-mingw/bin/i686-w64-mingw32-{clang,clang++,windres}.exe` (symlinks break clang++'s driver mode).
-- Keep fork-only docs in `docs/fork/`; behaviour meant for upstream goes into `docs/ARCHITECTURE.md`.
+- The fork goes its own way (owner's decision 25.10): never merge upstream, never send changes upstream. Watch the
+  author's releases and port good fixes with `git cherry-pick -x` or by hand citing the commit (INF-09). Changes are
+  targeted: fix and extend the author's design, do not rewrite it.
+- Fork docs live in `docs/fork/`; `docs/ARCHITECTURE.md` is the author's and stays untouched.
 - Update `docs/fork/KNOWLEDGE.md` and the backlog when something new is learned or a task is done.
 - Legal (LEGAL.md, NOTICE.md): never commit game files, data extracted from them, decompiled or leaked Rockstar code
   or `gta_sa.pdb` symbols; keep `LICENSE` and the author's history untouched; call the project a fork and link the

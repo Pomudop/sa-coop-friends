@@ -284,14 +284,19 @@ void Server::HandleHello(Player& p, Reader& r) {
     };
     // the version comes first in every hello: an older client's shorter one was told "damaged data" instead
     bool read = h.Read(r);
+    // no version at all (an empty or cut hello) is no version of ours: it passed here and joined with whatever it was
+    // (NET-02)
+    if (h.protocol == 0)
+        return reject("клиент не сообщил версию мода: у него старая версия или повреждённые данные",
+                      "the client did not tell its version of the mod: it is an old version or the data is damaged");
     // the original SA:COOP numbers its protocol below the fork's base: say which mod to install, not just "another
     // version" (the original's server says the latter to a fork client, which is enough there)
-    if (h.protocol != 0 && h.protocol < kForkProtocolBase)
+    if (h.protocol < kForkProtocolBase)
         return reject("это сервер SA:COOP Friends, а у вас оригинальный SA:COOP. Поставьте SA:COOP Friends той же "
                       "версии, что у хоста",
                       "this is a SA:COOP Friends server and you have the original SA:COOP. Install SA:COOP Friends of "
                       "the host's version");
-    if (h.protocol != 0 && h.protocol != kProtocolVersion)
+    if (h.protocol != kProtocolVersion)
         return reject(Format("у вас другая версия мода (у сервера %u, у вас %u). Версия должна быть одинаковой у обоих",
                              kProtocolVersion, h.protocol),
                       Format("your version of the mod differs (the server has %u, you have %u). Both players need the "
@@ -303,19 +308,25 @@ void Server::HandleHello(Player& p, Reader& r) {
                       "a nickname needs 2 to 20 characters (letters, digits, _-.[])");
     if (ReservedFileName(name))  // the profile is a file named after it: profiles\con.bin is a device on Windows 10
         return reject("такой ник занят системой Windows, выберите другой", "this nickname is reserved by Windows, pick another one");
-    if (Player* old = FindByName(name)) {
+    // every check before an old connection is let go: a stranger with the nickname of a player whose line lags, and a
+    // wrong password, threw that player out (NET-01)
+    if (!m_cfg.password.empty() && h.password != m_cfg.password) return reject("неверный пароль", "wrong password");
+    Player* old = FindByName(name);
+    if (old) {
         // the same player again while its old connection has not timed out (its game crashed, the line dropped): the
         // old one goes when it has been silent for 3 s (ENet pings a live game twice a second)
         enet_uint32 silent = old->peer ? m_host->serviceTime - old->peer->lastReceiveTime : 0;  // ENet's clock, wraps
         if (silent < 3000 || silent >= 0x80000000u)
             return reject("игрок с таким ником уже на сервере", "a player with this nickname is already here");
+    }
+    // the old connection's place is the returning player's: on a full server it came back to "the server is full"
+    if (JoinedCount() - (old ? 1 : 0) >= m_cfg.maxPlayers) return reject("на сервере нет свободных мест", "the server is full");
+    if (old) {
         ENetPeer* ghost = old->peer;
         LOGI("%s подключается снова: старое соединение закрыто", name.c_str());
         Leave(*old, LEAVE_TIMEOUT);
         enet_peer_reset(ghost);
     }
-    if (JoinedCount() >= m_cfg.maxPlayers) return reject("на сервере нет свободных мест", "the server is full");
-    if (!m_cfg.password.empty() && h.password != m_cfg.password) return reject("неверный пароль", "wrong password");
 
     p.name = name;
     p.joined = true;
