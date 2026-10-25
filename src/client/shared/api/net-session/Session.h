@@ -40,6 +40,9 @@ public:
     bool FriendlyFire() const { return Online() && m_friendlyFire; }  // the host let the players hurt each other
     const std::map<uint8_t, PeerInfo>& Peers() const { return m_peers; }
     const PeerInfo* Peer(uint8_t id) const;
+    // Who takes over the cars and people of a player who left: the lowest id left, this player included, so that every
+    // game names the same one (MP-03). Asked while the leaving player is still among the peers (onPeerLeave).
+    uint8_t HeirOf(uint8_t leaving) const;
     std::string PeerName(uint8_t id) const;
     uint32_t Rtt() const { return m_net.Rtt(); }
     NetClient& Net() { return m_net; }

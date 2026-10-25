@@ -116,11 +116,20 @@ private:
     void ReleaseKeptCar();
     game::CVehicle* SpawnMirror(const VehicleSpawn& sp);
     game::CVehicle* FindAdoptable(uint16_t model, const game::CVector& pos);
+    bool Inheriting(game::CVehicle* v);                 // a car of a player who left, waiting for its heir (MP-03)
+    game::CVehicle* TakeInherited(const VehicleSpawn& sp);  // the heir announced it: ours becomes its copy
 
     std::map<uint16_t, NetVehicle> m_byId;
     std::map<game::CVehicle*, uint16_t> m_byPtr;
     std::map<uint16_t, VehicleSpawn> m_pending;  // announced mirrors waiting for their model to stream in
     std::map<game::CVehicle*, uint8_t> m_giveAway;  // to hand over after the population code (vehicle -> player)
+    struct Inherited {
+        uint8_t heir;
+        uint16_t model;
+        int handle;
+        uint64_t untilMs;
+    };
+    std::map<game::CVehicle*, Inherited> m_inherited;  // the cars of a player who left, until its heir announces them
     uint16_t m_nextId = 1;
     uint64_t m_lastScan = 0;
     int m_lastDriven = -1, m_kept = -1;  // handles: the car the local player last drove, and it kept while inside

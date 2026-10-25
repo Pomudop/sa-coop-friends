@@ -1267,9 +1267,12 @@ void Peds::OnSessionEnd() {
     m_wasReady = false;
 }
 
-// The player left: its people stay in this game as its own (deleted, they left its cars driverless in the street, as MTA
-// keeps the elements and picks a new syncer).
-void Peds::OnPeerLeave(uint8_t id) { DropMirrorsOf(id, true); }
+// The player left: its people stay in the world (deleted, they left its cars driverless in the street, as MTA keeps the
+// elements and picks a new syncer). One game, its heir, keeps them as its own and announces them again; with three or
+// four players every game did, and each person stood twice or three times in the others' games (MP-03). The other
+// games let their copies go: a copy has no AI of its own and cannot simply become the heir's, whose announcement brings
+// a new one (into the heir's car, which Vehicles keeps).
+void Peds::OnPeerLeave(uint8_t id) { DropMirrorsOf(id, Net().HeirOf(id) == Net().MyId()); }
 
 void Peds::DropMirrorsOf(uint8_t id, bool keep) {
     std::vector<uint16_t> mirrors;

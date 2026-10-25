@@ -371,10 +371,30 @@ void Vehicles::HandleCreate(uint8_t from, Reader& r) {
     else m_pending[sp.netId] = sp;
 }
 
+bool Vehicles::Inheriting(CVehicle* v) {
+    auto it = m_inherited.find(v);
+    if (it == m_inherited.end()) return false;
+    if (GetVehicle(it->second.handle) == v && NowMs() < it->second.untilMs) return true;
+    m_inherited.erase(it);  // gone, or the heir never announced it: an ordinary car of ours from now on
+    return false;
+}
+
+CVehicle* Vehicles::TakeInherited(const VehicleSpawn& sp) {
+    CVehicle* best = nullptr;
+    float bestD = 15.0f;  // a car on the move went on in each game between the leave and the announcement
+    for (auto& [v, in] : m_inherited)
+        if (in.heir == sp.owner && in.model == sp.model && GetVehicle(in.handle) == v)
+            if (float d = (v->GetPosition() - sp.pos).Length(); d < bestD) bestD = d, best = v;
+    if (best) m_inherited.erase(best);
+    return best;
+}
+
 bool Vehicles::CreateMirror(const VehicleSpawn& sp) {
     if (Find(sp.netId)) return true;  // announced again meanwhile and made already
     bool adopted = false;
-    CVehicle* v = FindAdoptable(sp.model, sp.pos);
+    // the heir's announcement of a car of the player who left: our copy, whoever drives or sits in it, is its copy now
+    CVehicle* v = TakeInherited(sp);
+    if (!v) v = FindAdoptable(sp.model, sp.pos);
     if (v) {
         adopted = true;
         SetVehicleMatrix(v, sp.pos, sp.rot);
@@ -879,7 +899,7 @@ void Vehicles::ScanTraffic() {
     for (int i = 0; i < pool->size; ++i) {
         if (pool->byteMap[i] < 0) continue;
         auto* v = (CVehicle*)(pool->objects + (size_t)i * kVehiclePoolElemSize);
-        if (m_byPtr.count(v) || !IsSyncableVehicle(v)) continue;
+        if (m_byPtr.count(v) || !IsSyncableVehicle(v) || Inheriting(v)) continue;
         if (RemoteDistance(v->GetPosition(), v->AreaCode()) < kTrafficIn) EnsureNetworked(v);
     }
 }
@@ -995,6 +1015,7 @@ void Vehicles::OnPostProcess() {
 
 void Vehicles::OnSessionEnd() {
     ReleaseKeptCar();
+    m_inherited.clear();
     // mirrors stay in the world as this game's cars (the other game's scripts hold nothing here any more)
     for (auto& [id, nv] : m_byId)
         if (IsMirror(nv)) {
@@ -1009,14 +1030,21 @@ void Vehicles::OnSessionEnd() {
 void Vehicles::OnPeerLeave(uint8_t id) {
     for (auto it = m_pending.begin(); it != m_pending.end();)
         it = it->second.owner == id ? m_pending.erase(it) : std::next(it);
-    // The vehicles of the leaving player stay in the world and become ours (its scripts are gone with it). They are
-    // networked again under our own ids: its ids, kept, came again from its game when it rejoined (it counts from 1).
+    // The vehicles of the leaving player stay in the world (its scripts are gone with it). One game, its heir, takes
+    // them and networks them again under its own ids: its ids, kept, came again from its game when it rejoined (it
+    // counts from 1). With two players that was the one left; with three or four every game took them and announced
+    // them, and each car stood twice or three times in the others' games (MP-03). The other games keep their copies
+    // as they are and make them the heir's copies when its announcements come (TakeInherited); one the heir does not
+    // announce in 8 s (its population dropped it far from its player) becomes theirs as before.
+    uint8_t heir = Net().HeirOf(id);
+    uint64_t until = NowMs() + 8000;
     std::vector<uint16_t> ids;
     for (auto& [vid, nv] : m_byId)
         if (nv.owner == id) {
             nv.owner = Net().MyId();
             nv.script = false;
             Release(nv);
+            if (heir != Net().MyId() && Alive(nv)) m_inherited[nv.veh] = {heir, nv.model, nv.handle, until};
             ids.push_back(vid);
         }
     for (uint16_t vid : ids) Forget(vid, false);
@@ -1033,6 +1061,7 @@ void Vehicles::OnGameStarted() {
     m_byPtr.clear();
     m_pending.clear();
     m_giveAway.clear();
+    m_inherited.clear();
 }
 
 void Vehicles::OnGameShutdown() { OnGameStarted(); }
