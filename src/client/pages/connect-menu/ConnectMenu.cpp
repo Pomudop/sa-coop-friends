@@ -216,13 +216,20 @@ void RenderConnectMenu() {
                 cy += ch + 6 * s;
                 static const char* ids[] = {"addr0", "addr1", "addr2", "addr3"};
                 std::string port = Cfg().port == kDefaultPort ? "" : Format(":%d", Cfg().port);
+                float ax = 0;  // the addresses start after the longest kind's name (they ran into "Radmin VPN")
+                for (size_t i = 0; i < g_addrs.size() && i < 3; ++i)
+                    ax = std::max(ax, g.TextWidth(FONT_MENU_SMALL, netaddr::KindName(g_addrs[i].kind)));
+                ax += 24 * s;
                 for (size_t i = 0; i < g_addrs.size() && i < 3; ++i) {
                     std::string text = g_addrs[i].ip + port;
                     g.Text(FONT_MENU_SMALL, cx, cy + (rowH - ch) * 0.5f, netaddr::KindName(g_addrs[i].kind), kSaMuted);
-                    g.Text(FONT_NORMAL, cx + 230 * s, cy + (rowH - lh) * 0.5f, text, kText, TEXT_SHADOW);
+                    g.Text(FONT_NORMAL, cx + ax, cy + (rowH - lh) * 0.5f, text, kText, TEXT_SHADOW);
                     bool done = NowMs() - g_copiedMs < 1500 && g_copiedWhat == text;
                     const char* label = done ? TR("Скопировано", "Copied") : TR("Скопировать", "Copy");
-                    if (item(ids[i], cx + cw - g.TextWidth(FONT_MENU, label), cy, label, true, done)) CopyToClipboard(text);
+                    // right after the address, its pointer in between (right-aligned it covered the address in a small
+                    // window)
+                    float bx = cx + ax + g.TextWidth(FONT_NORMAL, text) + room + 12 * s;
+                    if (item(ids[i], bx, cy, label, true, done)) CopyToClipboard(text);
                     cy += rowH;
                 }
                 cy += 14 * s;
