@@ -9,13 +9,14 @@
 #include <cstdint>
 
 namespace coop {
-// Upstream's protocol number, updated on every merge of an upstream protocol change (docs/fork/BACKLOG.md, INF-03).
+// The author's protocol number the fork branched from (docs/fork/BACKLOG.md, INF-03). The fork does not merge upstream.
 constexpr uint32_t kUpstreamProtocol = 19;
 // The fork's numbers start at 1000 so that the fork and upstream refuse each other with "another version of the mod"
 // instead of connecting and silently disagreeing on messages.
 constexpr uint32_t kForkProtocolBase = 1000;
-// Bumped on any incompatible change of the network protocol.
-constexpr uint32_t kProtocolVersion = kForkProtocolBase + kUpstreamProtocol;
+// +1 on any incompatible change of the fork's network protocol.
+constexpr uint32_t kForkProtocolRevision = 0;
+constexpr uint32_t kProtocolVersion = kForkProtocolBase + kUpstreamProtocol + kForkProtocolRevision;
 constexpr uint16_t kDefaultPort = 7788;
 // Size of gta_sa.exe 1.0 US (HOODLUM) — the only supported executable.
 constexpr uint32_t kSupportedExeSize = 14383616;
