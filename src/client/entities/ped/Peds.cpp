@@ -644,7 +644,9 @@ CPed* Peds::SpawnMirror(NetPed& np) {
         RequestModel(model, 0);
         return nullptr;
     }
-    if (!HasRoom(PedPool(), kKeepPeds, "ped") && !FreeRandomPed()) return nullptr;
+    // BUG-15: only the host's people (its mission's among them) take the place of a passer-by here; the partners' crowds
+    // wait. Four games freeing places for each other's crowds removed people mid-speech and mid-task.
+    if (!HasRoom(PedPool(), kKeepPeds, "ped") && !(np.owner == Net().HostId() && FreeRandomPed())) return nullptr;
     // A copy is of its owner's type where the class stays a civilian's (CREATE_CHAR makes a CCivilianPed for all but
     // cops, medics and firemen, whose classes bring their own AI): gang members, dealers, criminals, hookers and bums of
     // the other game were plain civilians to this game's gangs, and no fight between the two games' people ever began.

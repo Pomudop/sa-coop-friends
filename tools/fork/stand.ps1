@@ -116,9 +116,25 @@ Write-Host "Logs: <copy>\coop\coop.log, the host's server: P1\coop\server-data\s
 
 # 4. the host first: its server must be up before the others join
 if ($NoLaunch) { return }
+# With two monitors the game asks "Device Selection" at every start of a copy with a fresh user_dir, and waits: the copy
+# sat at it (the hang detector called it "not responding") and the host's server did not start. OK is pressed for it.
+Add-Type @'
+using System; using System.Text; using System.Runtime.InteropServices;
+public class StandDlg { public delegate bool EP(IntPtr h, IntPtr l);
+[DllImport("user32.dll")] static extern bool EnumWindows(EP f, IntPtr l);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+[DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+public static int Ok() { int n = 0; EnumWindows((h, l) => { var s = new StringBuilder(64); GetWindowText(h, s, 64);
+    if (s.ToString() == "Device Selection") { SendMessage(h, 0x0111, (IntPtr)1, IntPtr.Zero); n++; } return true; }, IntPtr.Zero); return n; } }
+'@
+function Wait-Copy([int]$seconds) {
+    $until = (Get-Date).AddSeconds($seconds)
+    while ((Get-Date) -lt $until) { [void][StandDlg]::Ok(); Start-Sleep -Milliseconds 500 }
+}
 foreach ($n in 1..$Count) {
     $dst = Join-Path $Root "P$n"
     Start-Process (Join-Path $dst "gta_sa.exe") -WorkingDirectory $dst
     Write-Host "P$n started"
-    Start-Sleep -Seconds $(if ($n -eq 1) { 15 } else { 4 })
+    Wait-Copy $(if ($n -eq 1) { 15 } else { 5 })
 }
+Wait-Copy 5

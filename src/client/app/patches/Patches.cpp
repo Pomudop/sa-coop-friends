@@ -68,8 +68,38 @@ using RsEventFn = int(__cdecl*)(int, void*);
 RsEventFn g_origIdleEvent = nullptr;
 int __cdecl HookIdleEvent(int event, void* param) {
     auto* dev = (IDirect3DDevice9*)game::D3DDevice();
-    if (dev && dev->TestCooperativeLevel() == D3DERR_DEVICELOST) param = nullptr;
+    HRESULT level = dev ? dev->TestCooperativeLevel() : D3D_OK;
+    if (level == D3DERR_DEVICELOST) param = nullptr;
+    // BUG-13: a minimized copy lost its device, and a few minutes after it came back its game crashed drawing a
+    // real-time shadow (CShadows::CastShadowEntityXYZ, 0x70A087-0x70A0AF: the shadow camera's raster was gone). The game
+    // rebuilds those cameras only from its device restore callback (0x5BA120 sets the manager's m_bNeedsReinit), which
+    // this way back did not always reach. After any loss the manager rebuilds them on its next update.
+    static bool wasLost = false;
+    if (level != D3D_OK) {
+        wasLost = true;
+    } else if (wasLost) {
+        wasLost = false;
+        if (game::Ref<uint8_t>(0xC40350)) game::Ref<uint8_t>(0xC40351) = 1;  // g_realTimeShadowMan: initialised, needs reinit
+        LOGI("D3D device back: real-time shadows rebuilt");
+    }
     return g_origIdleEvent(event, param);
+}
+
+// BUG-14: the game reads its keys and mouse also while its window is in the background (run_in_background keeps it
+// going there). A key pressed in another window acted in this game too: with several copies on one PC (the test
+// stand) Shift made every copy's CJ jump or fly up, and keys typed for one copy's cheat set off the same cheat in all
+// four, each filled its streets and the copies of all those people filled the ped pool (crashes). It is the same for a
+// player typing in Discord. In the background the frame's input is empty: the pads, the keyboard and the mouse.
+using UpdatePadsFn = void(__cdecl*)();
+UpdatePadsFn g_origUpdatePads = nullptr;
+void __cdecl HookUpdatePads() {  // CPad::UpdatePads
+    g_origUpdatePads();
+    HWND hwnd = (HWND)game::GameWindow();
+    if (!hwnd || GetForegroundWindow() == hwnd) return;
+    for (int i = 0; i < 2; ++i) memset(&game::GetPad(i)->NewState, 0, sizeof(game::CControllerState));
+    memset((void*)0xB73190, 0, 0x270);  // CPad::NewKeyState (CKeyboardState)
+    memset((void*)0xB72CB0, 0, 0x270);  // CPad::TempKeyState: what the window's key events gathered
+    memset((void*)0xB73418, 0, 0x14);   // CPad::NewMouseControllerState
 }
 
 using VoidFn = void(__cdecl*)();
@@ -595,11 +625,16 @@ void ApplyWindowPlacement() {
             TerminateProcess(GetCurrentProcess(), 3);
         }
     }
+    // BUG-13: a minimized window has a client of 0x0. Taken for a wrong size, it was restored and resized here every
+    // second, its device went and came back, and the real-time shadows were left with gone rasters (a crash minutes
+    // later): the player minimized it, it stays so.
+    if (IsIconic(hwnd)) return;
     if (rc.right == g_winW && rc.bottom == g_winH && (style & WS_CAPTION) == (WindowStyle() & WS_CAPTION)) return;
     static int attempts = 0;
     if (++attempts > 5) return;  // something keeps resizing the window: stop fighting it
     LOGI("Window placement: client %ldx%ld style %08lX -> %dx%d", rc.right, rc.bottom, style, g_winW, g_winH);
     AdjustWindow(hwnd, g_winW, g_winH);
+    if (game::Ref<uint8_t>(0xC40350)) game::Ref<uint8_t>(0xC40351) = 1;  // a new size: real-time shadows rebuilt
 }
 
 void Apply() {
@@ -640,6 +675,7 @@ void Apply() {
     mem::RedirectCallFn(0x576C55, &HookMenuStopRadio, &g_origMenuStopRadio);  // CMenuManager::CheckForMenuClosing
     mem::RedirectCallFn(0x5737A5, &HookMenuStopRadio, &g_origMenuStopRadio);  // CMenuManager::SwitchToNewScreen
     mem::HookFn(0x746190, &HookSelectDevice, &g_origSelectDevice, "psSelectDevice");
+    mem::HookFn(0x541DD0, &HookUpdatePads, &g_origUpdatePads, "CPad::UpdatePads");
     mem::HookFn(0x710310, &HookStencilForObject, &g_origStencilForObject, "CStencilShadows::RenderForObject");
     mem::HookFn(0x431F80, &HookCreateCarForScript, &g_origCreateCarForScript, "CCarCtrl::CreateCarForScript");
     mem::HookFn(0x486B00, &HookClearSpace, &g_origClearSpace, "CTheScripts::ClearSpaceForMissionEntity");
