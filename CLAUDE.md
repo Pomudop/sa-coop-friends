@@ -7,7 +7,9 @@ like the upstream docs, code comments in English like the upstream code.
 Read first, in this order:
 0. `docs/fork/HANDOFF.md` — where the work stands now: the PR chain, what waits for a test in the game, how to run
    the multi-copy stand, what is next. All current work is on branch `four-players` (`main` has not got it yet).
-   Update its "Состояние" and "Дальше" at the end of a session.
+   Update its "Состояние" and "Дальше" at the end of a session, and add a row to its "Журнал сессий" right after
+   every notable action (what, where: branch/commit/PR, how it was checked). The owner switches between the cloud and
+   the local session, so this journal is how the next one gets the context.
 1. `docs/fork/KNOWLEDGE.md` — everything learned so far: architecture facts, traffic numbers, verified findings,
    community PRs, upstream issues, decisions, current state.
 2. `docs/fork/ROADMAP.md` — phases, priorities, decisions.

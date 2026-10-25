@@ -67,7 +67,7 @@ def targets(extra=()):
         "defines": ["-DCOOP_CLIENT"], "cflags": [],
         "deps": [common, ENET, MINHOOK],
         "libs": ["-lws2_32", "-lwinmm", "-lgdi32", "-luser32", "-lkernel32", "-lole32", "-loleaut32", "-lshell32", "-luuid",
-                 "-ldbghelp", "-lwinhttp"],
+                 "-ldbghelp", "-lwinhttp", "-liphlpapi"],
     }
     server = {
         "name": "server", "kind": "exe", "out": "coop-server.exe",
