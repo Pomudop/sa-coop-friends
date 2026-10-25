@@ -11,6 +11,7 @@
 #include "common/config/version/Version.h"
 #include "common/lib/util/Util.h"
 #include "shared/api/bot-client/BotClient.h"
+#include "shared/lib/fake-turn/FakeTurn.h"
 #include "shared/lib/server-process/ServerProcess.h"
 
 namespace coop::bot {
@@ -313,6 +314,20 @@ void PasswordBeforeReplace(Run& r) {
         r.Check(r.WaitFor([&] { return b.LeftId(oldId); }, 2000), "Bravo не узнал, что старое соединение Alpha закрыто");
 }
 
+// NET-04: a relay that does not work is told to the host with the reason, not only written to server.log
+void RelayFailure(Run& r) {
+    auto& host = r.Bot("Alpha");
+    if (!r.JoinOrFail(host)) return;
+    auto told = [&] {
+        return std::any_of(host.Chats().begin(), host.Chats().end(), [&](auto& c) {
+            return c.from == kServerId && Contains(c.text, "Ретранслятор не работает") && Contains(c.text, "логин");
+        });
+    };
+    uint64_t t0 = NowMs();
+    if (r.Check(r.WaitFor(told, 5000), "хост не узнал, что ретранслятор отклонил логин"))
+        r.notes.push_back(Format("причина сбоя ретранслятора пришла хосту через %u мс после входа", (unsigned)(NowMs() - t0)));
+}
+
 // NET-02: a hello without a version is refused
 void ProtocolZero(Run& r) {
     auto& z = r.Bot("Zero");
@@ -342,6 +357,8 @@ const std::vector<Entry>& Entries() {
         {{"password-before-replace", "NET-01: неверный пароль с ником зависшего игрока, верный — заменяет", nullptr, true},
          {"secret"}, PasswordBeforeReplace},
         {{"protocol-zero", "NET-02: приветствие без версии", nullptr, true}, {}, ProtocolZero},
+        {{"relay-failure", "NET-04: ретранслятор отклонил логин — хост видит причину", nullptr, true},
+         {"", 2, "", true}, RelayFailure},
     };
     return list;
 }
@@ -366,8 +383,20 @@ Result RunScenario(size_t index, const Settings& s) {
         return res;
     }
     ServerProcess server;
+    FakeTurn turn;
     uint16_t port = external ? s.connectPort : (uint16_t)(s.port + index);
-    if (!external && !server.Start(s.serverExe, s.workDir + Utf8ToWide(e.info.name) + L"\\", port, e.options)) {
+    ServerOptions options = e.options;
+    if (options.fakeTurn) {
+        // listening before the server starts: its relay asks for an address at once
+        uint16_t turnPort = (uint16_t)(port + 500);
+        if (!turn.Start(turnPort)) {
+            res.outcome = Outcome::Fail;
+            res.failures.push_back(Format("не удалось открыть порт %u для поддельного TURN", turnPort));
+            return res;
+        }
+        options.turn = Format("turn:127.0.0.1:%u:coop-bot:wrong", turnPort);
+    }
+    if (!external && !server.Start(s.serverExe, s.workDir + Utf8ToWide(e.info.name) + L"\\", port, options)) {
         res.outcome = Outcome::NoServer;
         res.serverLog = server.LogTail(15);
         return res;

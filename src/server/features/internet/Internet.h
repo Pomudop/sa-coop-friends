@@ -25,6 +25,8 @@ public:
     void Service();                              // network thread: punch packets
     std::string Code();                          // empty until known
     bool TakeNewCode(std::string& code);         // the code became known since the last call
+    // the relay failed since the last call: why, for the host (once; empty en: the same in English)
+    bool TakeRelayFailure(std::string& why, std::string& whyEn);
 
 private:
     void Worker();
@@ -39,6 +41,7 @@ private:
     nat::SignalSubscriber m_signal;
     TurnRelay m_turn;
     bool m_turnEnabled = false;
+    bool m_turnFailureTaken = false;
 
     std::mutex m_mutex;
     std::string m_code;
