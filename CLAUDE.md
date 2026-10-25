@@ -1,0 +1,25 @@
+# SA:COOP fork — notes for Claude
+
+Fork of github.com/Karimov-Akbar/sa-coop (MIT): a GTA San Andreas 1.0 US co-op mod. The fork aims at up to 4 friends,
+reliable connections and fewer drops to the menu. The owner writes in Russian: answer in Russian, keep docs in Russian
+like the upstream docs, code comments in English like the upstream code.
+
+Read first, in this order:
+1. `docs/fork/KNOWLEDGE.md` — everything learned so far: architecture facts, traffic numbers, verified findings,
+   community PRs, upstream issues, decisions, current state.
+2. `docs/fork/ROADMAP.md` — phases, priorities, decisions.
+3. `docs/fork/BACKLOG.md` — tasks with code links (lines are of upstream `636b515`) and acceptance criteria.
+4. `docs/fork/GETTING_STARTED.md` — build, multi-copy test stand, workflow, releases.
+5. `docs/ARCHITECTURE.md` — the author's detailed design notes (Russian).
+
+Rules:
+- Build: `powershell -ExecutionPolicy Bypass -File tools/get-toolchain.ps1`, then `python tools/build.py dist`.
+  Checks: `python tools/fsd_check.py`, `python tools/i18n_check.py`.
+- `COOP_VERSION_STR` must be digits and dots only (build.py parses it). Fork versions are `0.3.0.N`.
+- Any protocol change bumps the fork protocol number (`1000 + upstream protocol`, BACKLOG INF-03).
+- Follow the author's style: FSD layers, `TR("ru", "en")` for every game text, comments explain why and name engine
+  functions next to addresses, network data goes through `Reader` and is validated before touching the engine.
+- Claude cannot run the game. Network/server changes are verified with the headless bot (INF-05); game changes are
+  verified by the owner on the multi-copy stand. Say which was done.
+- Keep fork-only docs in `docs/fork/`; behaviour meant for upstream goes into `docs/ARCHITECTURE.md`.
+- Update `docs/fork/KNOWLEDGE.md` and the backlog when something new is learned or a task is done.
