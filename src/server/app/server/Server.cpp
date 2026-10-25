@@ -44,7 +44,7 @@ bool Server::Start(const Config& cfg) {
     }
     enet_host_compress_with_range_coder(m_host);
     m_host->mtu = net::kMtu;
-    if (m_cfg.internet) m_internet.Start(m_host, m_cfg.port, m_cfg.turn);
+    if (m_cfg.internet) m_internet.Start(m_host, m_cfg.port, m_cfg.turn, m_cfg.dataDir);
 
     // initial world: explicit file from the launcher, otherwise the last uploaded one
     if (!m_cfg.worldFile.empty()) {

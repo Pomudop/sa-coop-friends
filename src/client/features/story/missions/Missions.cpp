@@ -292,14 +292,14 @@ struct Side {
     uint64_t offerUntil = 0;  // its call can be made until then (0: made, or too late)
     bool offered = false;     // made, no answer yet
     int32_t moneyAtStart = 0;
-    uint8_t with = 0xFF;      // who joined ours
+    std::set<uint8_t> with;   // who joined ours (MP-12: up to three helpers, it held one)
     uint8_t owner = 0xFF;     // whose we joined
     std::string joined;       // and its name
     uint8_t inviteFrom = 0xFF;  // a call to answer
     std::string inviteName;
     uint64_t inviteUntil = 0;
 } g_side;
-bool SideOwning() { return g_side.with != 0xFF; }
+bool SideOwning() { return !g_side.with.empty(); }
 bool SideJoined() { return g_side.owner != 0xFF; }
 // The game whose mission this one shows: the host's story mission, or the side activity it joined
 bool MissionSource(uint8_t from) { return (from == Net().HostId() && !Net().IsHost()) || (SideJoined() && from == g_side.owner); }
@@ -820,6 +820,9 @@ bool PartnersAtMarker(CPed* host) {
         // a partner whose game sends nothing for 5 s (in the pause menu, loading, hung) cannot come: the host was held
         // at the marker for good. Such a player is away in SA-MP and MTA too.
         if (!rp || !rp->hasState || NowMs() - rp->stateRecvMs > 5000) continue;
+        // MP-11: one far away (a shop across the map, another interior) does not hold the others at the marker: those
+        // within 150 m come in, the rest follow the mission's texts and marks and can join with /tp
+        if (rp->state.area != host->AreaCode() || (rp->state.pos - host->GetPosition()).Length2D() > 150.0f) continue;
         if (!rp->ped || !InArea(marker, rp->ped->GetPosition(), 1.0f)) {  // two can not stand on one spot
             g_waitMs = NowMs();
             g_waitArea = marker;
@@ -1309,6 +1312,29 @@ void SendCutscene(uint8_t op, const char* name = "", int32_t area = 0) {
     Net().Send(proto::CH_RELIABLE, w);
 }
 // the host's choice of the partner's spot for a shot, and when (the camera's clock) the shot begins
+// MP-10: the host's game picks one spot in a cutscene for "the partner". The first partner (by number) takes it as it is;
+// the second stands beside it and the third behind (both games rank the partners alike), and where the spot is a seat,
+// a lean or a car they are not shown: two in one seat stood inside each other.
+int PartnerRank(uint8_t id) {
+    int rank = 0;
+    for (auto& [pid, p] : Net().Peers())
+        if (pid != Net().HostId() && pid < id) ++rank;
+    if (Net().MyId() != Net().HostId() && Net().MyId() < id) ++rank;  // Peers() leaves this game's player out
+    return rank;
+}
+
+scene::Spot ForPartner(scene::Spot s, int rank) {
+    if (rank == 0) return s;
+    if (s.pose == scene::POSE_SIT || s.pose == scene::POSE_LEAN || s.pose == scene::POSE_CAR) {
+        s.pose = scene::POSE_HIDDEN;
+        return s;
+    }
+    CVector right{std::cos(s.heading), std::sin(s.heading), 0.0f};
+    CVector side = rank == 1 ? right * -0.9f : CVector{right.y, -right.x, 0.0f} * 0.9f;
+    s.ground = s.ground + side;
+    return s;
+}
+
 void SendSpot(const scene::Spot& s, float at) {
     Writer w(proto::G_CUTSCENE);
     w.U8(CS_SPOT);
@@ -1620,7 +1646,7 @@ void HandleCutscene(uint8_t from, Reader& r) {
         s.heading = r.F32();
         s.pose = (scene::Pose)std::min<uint8_t>(r.U8(), scene::POSE_CAR);
         s.act = r.U8();
-        if (r.Ok()) scene::FollowSpot(s, at);
+        if (r.Ok()) scene::FollowSpot(ForPartner(s, PartnerRank(Net().MyId())), at);
     } else if (op == CS_FOLLOW) {
         Vec3 to = r.Vec(), from = r.Vec();
         int8_t fromArea = r.I8();
@@ -2112,11 +2138,13 @@ void SideUpdate() {
             Writer w(proto::G_BLIP);
             w.U8(BLIP_CLEAR);
             Net().Send(proto::CH_RELIABLE, w);
-            SendSide(SIDE_END, g_side.with, g_side.name, earned);
-            LOGI("Shared side activity over (%s): $%d for %s too", g_side.name.c_str(), earned, Net().PeerName(g_side.with).c_str());
+            for (uint8_t id : g_side.with) {
+                SendSide(SIDE_END, id, g_side.name, earned);
+                LOGI("Shared side activity over (%s): $%d for %s too", g_side.name.c_str(), earned, Net().PeerName(id).c_str());
+            }
         }
         g_side.name.clear();
-        g_side.with = 0xFF;
+        g_side.with.clear();
         g_side.offered = false;
         g_side.offerUntil = 0;
         ForgetSent();
@@ -2156,18 +2184,17 @@ void HandleSide(uint8_t from, Reader& r) {
         g_side.inviteFrom = from, g_side.inviteName = name, g_side.inviteUntil = NowMs() + 20000;
         LOGI("%s calls us in (%s)", who.c_str(), name.c_str());
     } else if (op == SIDE_ACCEPT) {
-        if (name != g_side.name || SideOwning()) {  // over already, or the other joined first
+        if (name != g_side.name || g_side.with.size() >= 3) {  // over already, or three helpers have joined
             SendSide(SIDE_END, from, name);
             return;
         }
-        g_side.with = from, g_side.offered = false;
+        g_side.with.insert(from);  // the call stays open for the others (MP-12)
         ForgetSent();  // all it has now goes to the newcomer
         ui::TheChat().AddSystem(Format(TR("%s принимает приглашение на %s.", "%s accepts your invitation to %s."), who.c_str(),
                                        JobTo(name).c_str()));
         LOGI("%s joined our side activity (%s)", who.c_str(), name.c_str());
     } else if (op == SIDE_DECLINE) {
         if (name != g_side.name || !g_side.offered) return;
-        g_side.offered = false;
         ui::TheChat().AddSystem(Format(TR("%s отклоняет приглашение на %s.", "%s declines your invitation to %s."), who.c_str(),
                                        JobTo(name).c_str()));
     } else if (op == SIDE_END) {
@@ -2180,8 +2207,8 @@ void HandleSide(uint8_t from, Reader& r) {
         }
         LOGI("%s's side activity over (%s), $%d", who.c_str(), name.c_str(), money);
     } else if (op == SIDE_LEAVE) {
-        if (from != g_side.with) return;
-        g_side.with = 0xFF;
+        if (!g_side.with.count(from)) return;
+        g_side.with.erase(from);
         ui::TheChat().AddSystem(Format(TR("%s выходит из %s.", "%s leaves %s."), who.c_str(), JobOf(name).c_str()));
         LOGI("%s left our side activity (%s)", who.c_str(), name.c_str());
     }
@@ -2300,7 +2327,7 @@ public:
                                        "The host starts the story missions, and you play them together."));
     }
     void OnPeerLeave(uint8_t id) override {
-        if (id == g_side.with) g_side.with = 0xFF;  // a shared side activity goes on alone
+        g_side.with.erase(id);  // a shared side activity goes on without it
         if (id == g_side.inviteFrom) g_side.inviteFrom = 0xFF;
         if (id == g_side.owner && core::IsPlayerReady()) DropJoined();
         // the host gone in the middle of its mission (its game crashed) while a dedicated server goes on: its fade-out
@@ -2505,7 +2532,7 @@ private:
                     // the scene's interior, not the one its game reports: before its cutscene starts there and after
                     // it ends it is elsewhere, and a ped of another area is not drawn (it vanished from the scene)
                     if (cj) rp.ped->AreaCode() = cj->AreaCode();
-                    scene::Hold(rp.ped, spot);
+                    scene::Hold(rp.ped, ForPartner(spot, PartnerRank(id)));
                 }
             g_sceneHeld = true;
         } else if (!cs && g_sceneHeld) {

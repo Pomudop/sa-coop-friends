@@ -33,6 +33,8 @@ struct RemotePlayer {
     uint16_t vehNetId = 0;
     int8_t seat = -1;           // -1 driver, 0.. passenger seats
     uint64_t enterTaskMs = 0;   // when we started the enter-car animation for this player
+    game::CVehicle* enterVeh = nullptr;  // MP-09: the car and seat it is getting into (its seat is taken
+    int8_t enterSeat = -2;               // for our G until it sits; -1 driver, -2 none)
     uint64_t exitTaskMs = 0;
     bool deadShown = false;     // the owner reported death and the local ped plays it
     uint64_t deadSinceMs = 0;   // the owner's state said dead (its death animation may come a moment later)
@@ -142,5 +144,8 @@ int SeatOfTargetDoor(int door);
 int SeatOrAny(game::CVehicle* v, int seat);
 // distance to the nearest remote player in the same interior (huge when there is none), and who it is
 float RemoteDistance(const game::CVector& p, int8_t area, uint8_t* who = nullptr);
+// MP-04: of two players near each other, the one whose game leads the group (random population, trains): the host,
+// otherwise the smaller player number. True when `other` leads over this game's player.
+bool LeadsOverMe(uint8_t other);
 
 }  // namespace coop
