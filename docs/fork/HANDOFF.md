@@ -23,7 +23,7 @@
 | [#7](https://github.com/Pomudop/sa-coop-friends/pull/7) | `ux-01-chat-f6` | UX-01: чат на F6 | сборка; **стенд** |
 | [#8](https://github.com/Pomudop/sa-coop-friends/pull/8) | `stb-02-queue-drop-old` | STB-02: без «перемотки» после зависания | сборка; **стенд** |
 | [#9](https://github.com/Pomudop/sa-coop-friends/pull/9) | `four-players` | Игра на четверых (MP-01, 02, 03, 06, 07, 08, 16, NET-03) и стенд `stand.ps1` | бот; игра — **стенд** |
-| — | `conn-01-radmin` (от `four-players`) | CONN-01: адреса Radmin VPN и локальной сети в F9, `IP:порт`, `stand.ps1 -HostAddress` | бот через Radmin; F9 — **стенд** |
+| [#10](https://github.com/Pomudop/sa-coop-friends/pull/10) | `conn-01-radmin` (от `four-players`) | CONN-01: адреса Radmin VPN и локальной сети в F9, `IP:порт`, `stand.ps1 -HostAddress` | бот через Radmin; F9 — **стенд** |
 
 ## Состояние
 - **Сделано:** этап 0 (кроме INF-02 и INF-08), все P0 этапа 1, часть P1 (NET-02, UX-01, STB-02), основа этапа 3.
