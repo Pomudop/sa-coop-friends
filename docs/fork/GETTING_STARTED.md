@@ -304,7 +304,7 @@ GitHub Actions соберёт `SA-COOP.zip` и опубликует релиз. 
    создаётся `server.ini`.
 2. В `server.ini`, раздел `[server]`:
    - `port`, `password`;
-   - `max_players` — пока не больше 2, до MP-02;
+   - `max_players` — от 2 до 4;
    - `host = <ник хоста>` — роль хоста не уйдёт к тому, кто зашёл раньше;
    - `internet = 0` — UPnP и коды приглашения на сервере с белым IP не нужны.
 3. Открыть UDP-порт: в брандмауэре Windows и в панели облака (у Oracle — Security List).

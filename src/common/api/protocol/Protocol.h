@@ -13,7 +13,9 @@
 
 namespace coop::proto {
 
-constexpr int kMaxPlayers = 8;  // hard limit of a session, the host included (the 4-bit owner part of net ids allows 15)
+// players in a session, the host included: the fork aims at 4 friends and tests 4 (PR #32 allowed 8; the 4-bit owner
+// part of net ids allows 15)
+constexpr int kMaxPlayers = 4;
 constexpr uint8_t kServerId = 255;
 constexpr size_t kMaxChatLen = 160;
 constexpr size_t kWorldChunk = 16 * 1024;

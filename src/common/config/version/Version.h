@@ -15,7 +15,7 @@ constexpr uint32_t kUpstreamProtocol = 19;
 // instead of connecting and silently disagreeing on messages.
 constexpr uint32_t kForkProtocolBase = 1000;
 // +1 on any incompatible change of the fork's network protocol.
-constexpr uint32_t kForkProtocolRevision = 0;
+constexpr uint32_t kForkProtocolRevision = 1;  // 1: up to 4 players (MP-01, MP-02): an older build shares one player data
 constexpr uint32_t kProtocolVersion = kForkProtocolBase + kUpstreamProtocol + kForkProtocolRevision;
 constexpr uint16_t kDefaultPort = 7788;
 // Size of gta_sa.exe 1.0 US (HOODLUM) — the only supported executable.

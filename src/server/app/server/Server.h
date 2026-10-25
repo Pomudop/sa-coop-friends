@@ -104,7 +104,9 @@ private:
     Config m_cfg;
     ENetHost* m_host = nullptr;
     Internet m_internet;
-    std::array<Player, proto::kMaxPlayers> m_players{};
+    // two spare slots: a connection takes one before its hello, and a player back after a crash on a full server
+    // found none while its old connection held its own (NET-03). Joined players stay within m_cfg.maxPlayers.
+    std::array<Player, proto::kMaxPlayers + 2> m_players{};
     volatile bool m_running = false;
     std::vector<uint8_t> m_world;  // current world save
     std::string m_worldLabel;

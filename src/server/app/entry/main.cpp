@@ -1,7 +1,7 @@
 // coop-server.exe — SA:COOP relay server.
 //
 //   coop-server.exe [--port N] [--name "..."] [--password X] [--world <save file> | --new-game] [--host <nick>]
-//                   [--friendly-fire 0|1] [--max 2..8] [--config server.ini] [--data <dir>]
+//                   [--friendly-fire 0|1] [--max 2..4] [--config server.ini] [--data <dir>]
 #include <windows.h>
 
 #include <cstdio>
@@ -36,7 +36,7 @@ static void WriteDefaultConfig(const std::wstring& path) {
         "port = 7788\r\n"
         "; Оставьте пустым, если пароль не нужен.\r\n"
         "password =\r\n"
-        "; Сколько игроков в игре, вместе с хостом: от 2 до 8. С 7 и больше возможны рассинхроны и высокая нагрузка.\r\n"
+        "; Сколько игроков в игре, вместе с хостом: от 2 до 4.\r\n"
         "; Сервер, который запускает игра (меню F9), берёт число из её настройки.\r\n"
         "max_players = 4\r\n"
         "; Ник игрока, который всегда будет хостом. Если пусто, хостом становится тот, кто зашёл первым.\r\n"
