@@ -48,7 +48,8 @@ private:
     bool Request(uint16_t method, const std::vector<std::vector<uint8_t>>& attrs, std::vector<uint8_t>* response);
     void SendIndication(const sockaddr_in& peer, const uint8_t* data, size_t len);
     void OnTurnPacket(const uint8_t* data, size_t len);
-    void RefreshPermissions();
+    bool Allocate();            // a relayed address (again after the old one was lost): its lifetime, Ready or Failed
+    bool RefreshPermissions();  // true when there was nothing to permit or the server took them
 
     std::string m_spec;
     uint16_t m_gamePort = 0;

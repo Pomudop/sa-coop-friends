@@ -64,6 +64,7 @@ public:
     }
 
     std::vector<std::string> notes, failures;
+    FakeTurn* turn = nullptr;  // the server's relay when the scenario has one (ServerOptions::fakeTurn)
 
 private:
     std::string m_host;
@@ -328,6 +329,28 @@ void RelayFailure(Run& r) {
         r.notes.push_back(Format("причина сбоя ретранслятора пришла хосту через %u мс после входа", (unsigned)(NowMs() - t0)));
 }
 
+// NET-05: a lost renewal of the relay is tried again within seconds, and a lost allocation is asked for anew
+void RelayRefresh(Run& r) {
+    if (!r.turn) return;
+    auto times = [&](uint16_t method) {
+        std::vector<uint64_t> v;
+        for (auto& [m, at] : r.turn->Requests())
+            if (m == method) v.push_back(at);
+        return v;
+    };
+    // the relay renews at half of its 120 s lifetime: the first Refresh comes after ~60 s and goes unanswered 3 times
+    if (!r.Check(r.WaitFor([&] { return times(FakeTurn::kRefresh).size() >= 3; }, 80000),
+                 "ретранслятор не продлевал адрес 80 с"))
+        return;
+    uint64_t lost = times(FakeTurn::kRefresh).back();
+    bool retried = r.WaitFor([&] { return times(FakeTurn::kRefresh).size() >= 4; }, 20000);
+    if (!r.Check(retried, "после потерянного продления повтора не было 20 с (до исправления — только через 60 с)")) return;
+    r.notes.push_back(Format("повтор продления через %.1f с после потерянного", (times(FakeTurn::kRefresh)[3] - lost) / 1000.0));
+    // the retry is answered with 437, allocation mismatch: the relay takes a new address
+    r.Check(r.WaitFor([&] { return times(FakeTurn::kAllocate).size() >= 2; }, 5000),
+            "после ошибки 437 ретранслятор не запросил новый адрес");
+}
+
 // NET-02: a hello without a version is refused
 void ProtocolZero(Run& r) {
     auto& z = r.Bot("Zero");
@@ -358,7 +381,10 @@ const std::vector<Entry>& Entries() {
          {"secret"}, PasswordBeforeReplace},
         {{"protocol-zero", "NET-02: приветствие без версии", nullptr, true}, {}, ProtocolZero},
         {{"relay-failure", "NET-04: ретранслятор отклонил логин — хост видит причину", nullptr, true},
-         {"", 2, "", true}, RelayFailure},
+         {"", 2, "", 1}, RelayFailure},
+        {{"relay-refresh", "NET-05: продление ретранслятора потеряно, потом 437 — повтор и новый адрес (~80 с)", nullptr,
+          true},
+         {"", 2, "", 2}, RelayRefresh},
     };
     return list;
 }
@@ -389,7 +415,7 @@ Result RunScenario(size_t index, const Settings& s) {
     if (options.fakeTurn) {
         // listening before the server starts: its relay asks for an address at once
         uint16_t turnPort = (uint16_t)(port + 500);
-        if (!turn.Start(turnPort)) {
+        if (!turn.Start(turnPort, options.fakeTurn == 1 ? FakeTurn::Mode::RefuseLogin : FakeTurn::Mode::LoseRefresh)) {
             res.outcome = Outcome::Fail;
             res.failures.push_back(Format("не удалось открыть порт %u для поддельного TURN", turnPort));
             return res;
@@ -402,6 +428,7 @@ Result RunScenario(size_t index, const Settings& s) {
         return res;
     }
     Run r(external ? s.connect : "127.0.0.1", port);
+    if (options.fakeTurn) r.turn = &turn;
     e.run(r);
     res.notes = r.notes;
     res.failures = r.failures;
