@@ -567,6 +567,11 @@ void Peds::ScanOwned() {
         float d = RemoteDistance(ped->GetPosition(), AreaOf(ped));
         if (!np) {
             if (d > SyncIn(ped)) continue;
+            // BUG-16: a body this game does not know is not a new person. A mirror's body its owner removed fades out here
+            // (REMOVE_CHAR_ELEGANTLY) after its record is gone: announced as ours, every other game made a copy of it,
+            // and when that one was removed the same happened there. With four players the bodies multiplied until the
+            // ped pool was full and every game crashed.
+            if (IsPedDead(ped) || ped->Health() <= 0.0f || (ped->PedFlags2() & 8)) continue;  // CPed::bFadeOut
             // made by a script each game runs for its own player (MarkLocal); one that drives off is ours to show, and a
             // side job's people (a taxi fare, the vigilante's criminals) are shown out in the street
             if (auto it = m_local.find(GetPedRef(ped)); it != m_local.end() && !ped->InVehicle() && (!it->second || AreaOf(ped) != 0))
