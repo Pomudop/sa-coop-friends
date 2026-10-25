@@ -333,11 +333,17 @@ void RenderConnectMenu() {
     }
     std::string close = online || busy || inGame ? TR("Закрыть", "Close") : TR("Одиночная игра", "Single player");
     if (item("close", cx + cw - g.TextWidth(FONT_MENU, close), by, close)) SetConnectMenuVisible(false);
+    // the chat's own key: F6 in a new coop.ini, T in one written before (UX-01)
+    int vk = Cfg().chatKey;
+    std::string chatKey = (vk >= 'A' && vk <= 'Z') || (vk >= '0' && vk <= '9') ? std::string(1, (char)vk)
+                          : vk >= 0x70 && vk <= 0x87                         ? Format("F%d", vk - 0x6F)
+                                                                             : Format("#%d", vk);
     g.Text(FONT_SMALL, cx, fy,
-           TR("{ACCBF1}F9{8D9CAD}  окно     {ACCBF1}T{8D9CAD}  чат     {ACCBF1}B{8D9CAD}  голос     "
-              "{ACCBF1}G{8D9CAD}  сесть пассажиром     {ACCBF1}F2{8D9CAD}  игроки",
-              "{ACCBF1}F9{8D9CAD}  window     {ACCBF1}T{8D9CAD}  chat     {ACCBF1}B{8D9CAD}  voice     "
-              "{ACCBF1}G{8D9CAD}  passenger     {ACCBF1}F2{8D9CAD}  players"),
+           Format(TR("{ACCBF1}F9{8D9CAD}  окно     {ACCBF1}%s{8D9CAD}  чат     {ACCBF1}B{8D9CAD}  голос     "
+                     "{ACCBF1}G{8D9CAD}  сесть пассажиром     {ACCBF1}F2{8D9CAD}  игроки",
+                     "{ACCBF1}F9{8D9CAD}  window     {ACCBF1}%s{8D9CAD}  chat     {ACCBF1}B{8D9CAD}  voice     "
+                     "{ACCBF1}G{8D9CAD}  passenger     {ACCBF1}F2{8D9CAD}  players"),
+                  chatKey.c_str()),
            kSaMuted, TEXT_SHADOW);
     w::EndFrame();
     w::DrawCursor();
