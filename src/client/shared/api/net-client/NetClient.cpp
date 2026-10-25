@@ -2,6 +2,8 @@
 
 #include <enet/enet.h>
 
+#include <algorithm>
+
 #include "common/api/nat-traversal/NatTraversal.h"
 #include "common/api/net/Net.h"
 #include "common/api/protocol/Protocol.h"
@@ -250,9 +252,18 @@ void NetClient::ThreadMain(std::string host, uint16_t port) {
                     Packet p{ev.channelID, std::vector<uint8_t>(ev.packet->data, ev.packet->data + ev.packet->dataLength)};
                     enet_packet_destroy(ev.packet);
                     std::lock_guard<std::mutex> lock(m_inMutex);
-                    // a game that stands (a long load, a hang, alt-tab without run_in_background) piled up every state
-                    // and applied them all at once, stale: past a few thousand only the reliable ones are kept
-                    if (m_in.size() > 4000 && (p.channel == proto::CH_STATE || p.channel == proto::CH_VOICE)) break;
+                    // A game that stands (a long load, a hang, alt-tab without run_in_background) piled up every state
+                    // and applied them all at once. Past a few thousand the new states and voice were dropped and the
+                    // old ones kept, so the copies replayed seconds of the past (STB-02). Now the queued states and
+                    // voice go, the reliable events stay: every copy's next state comes within 2 s (parked cars' rate).
+                    auto stale = [](const Packet& q) { return q.channel == proto::CH_STATE || q.channel == proto::CH_VOICE; };
+                    if (m_in.size() > 4000 && stale(p)) {
+                        size_t before = m_in.size();
+                        m_in.erase(std::remove_if(m_in.begin(), m_in.end(), stale), m_in.end());
+                        LOGW("Очередь входящих переполнена (игра стояла): выброшено %u устаревших состояний и голоса",
+                             (unsigned)(before - m_in.size()));
+                        if (m_in.size() > 4000) break;  // reliable events alone: they stay, this state goes
+                    }
                     m_in.push_back(std::move(p));
                     break;
                 }
