@@ -330,13 +330,13 @@ void TurnRelay::OnTurnPacket(const uint8_t* data, size_t len) {
     peer.fromBytes += d.size();
 }
 
-void TurnRelay::RefreshPermissions() {
+bool TurnRelay::RefreshPermissions() {
     std::set<uint32_t> want;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         want = m_allowed;
     }
-    if (want.empty()) return;
+    if (want.empty()) return true;
     std::vector<Bytes> attrs;
     for (uint32_t ip : want) {
         sockaddr_in a{};
@@ -344,13 +344,12 @@ void TurnRelay::RefreshPermissions() {
         a.sin_addr.s_addr = ip;
         attrs.push_back(XorAddr(A_PEER, a));
     }
-    if (Request(CREATE_PERMISSION, attrs, nullptr)) m_permitted = want;
+    if (!Request(CREATE_PERMISSION, attrs, nullptr)) return false;
+    m_permitted = want;
+    return true;
 }
 
-void TurnRelay::Thread() {
-    if (!Credentials()) return;
-    m_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    BigBuffers(m_sock);
+bool TurnRelay::Allocate() {
     Bytes resp;
     if (!Request(ALLOCATE, {Attr(A_TRANSPORT, "\x11\0\0\0", 4)}, &resp)) {
         if (!m_quit) {
@@ -363,8 +362,7 @@ void TurnRelay::Thread() {
                 Fail(Format("TURN-сервер %s отказал в адресе ретранслятора (ошибка %d)", host, m_lastError),
                      Format("TURN server %s refused a relay address (error %d)", host, m_lastError));
         }
-        closesocket(m_sock);
-        return;
+        return false;
     }
     Parsed p;
     sockaddr_in relayed{};
@@ -376,18 +374,39 @@ void TurnRelay::Thread() {
     if (!ParseXorAddr(p.attrs[A_RELAYED], relayed)) {
         Fail(Format("TURN-сервер %s прислал адрес ретранслятора, который не прочитать", m_host.c_str()),
              Format("TURN server %s sent a relay address that cannot be read", m_host.c_str()));
+        return false;
+    }
+    m_permitted.clear();  // a new allocation has none: the friends' permissions are asked for again
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_status = Status::Ready;
+    m_relayed.ip = relayed.sin_addr.s_addr;
+    m_relayed.port = ntohs(relayed.sin_port);
+    LOGI("TURN: адрес ретранслятора %s (сервер %s)", m_relayed.ToString().c_str(), m_host.c_str());
+    return true;
+}
+
+void TurnRelay::Thread() {
+    if (!Credentials()) return;
+    m_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    BigBuffers(m_sock);
+    if (!Allocate()) {
         closesocket(m_sock);
         return;
     }
-    {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_status = Status::Ready;
-        m_relayed.ip = relayed.sin_addr.s_addr;
-        m_relayed.port = ntohs(relayed.sin_port);
-        LOGI("TURN: адрес ретранслятора %s (сервер %s)", m_relayed.ToString().c_str(), m_host.c_str());
-    }
 
-    uint64_t refreshAt = NowMs() + std::max<uint32_t>(m_lifetime, 120) * 500, permissionsAt = NowMs() + 240000;
+    // A failed renewal was tried again only at the next round, 240 s later for permissions that live 300 s: two lost
+    // answers and the relay stopped forwarding to friends. Now: again after 5 s, doubling up to 30 s. A lost allocation
+    // (437, or its lifetime over) is asked for anew.
+    auto backoff = [](uint32_t& ms) {
+        uint32_t now = ms;
+        ms = std::min<uint32_t>(ms * 2, 30000);
+        return now;
+    };
+    uint64_t start = NowMs();
+    uint64_t refreshAt = start + std::max<uint32_t>(m_lifetime, 120) * 500;
+    uint64_t allocationEnds = start + (uint64_t)m_lifetime * 1000;
+    uint64_t permissionsAt = start + 240000, permissionsRetryAt = 0;  // the retry also for friends not permitted yet
+    uint32_t refreshWait = 5000, permissionsWait = 5000;
     while (!m_quit) {
         fd_set fds;
         FD_ZERO(&fds);
@@ -427,13 +446,51 @@ void TurnRelay::Thread() {
             std::lock_guard<std::mutex> lock(m_mutex);
             newPeers = m_allowed != m_permitted;
         }
-        if (newPeers || now >= permissionsAt) {  // permissions live 300 s
-            RefreshPermissions();
-            permissionsAt = now + 240000;
+        if ((newPeers && now >= permissionsRetryAt) || now >= permissionsAt) {  // permissions live 300 s
+            if (RefreshPermissions()) {
+                permissionsAt = now + 240000;
+                permissionsRetryAt = 0;
+                permissionsWait = 5000;
+            } else {
+                uint32_t wait = backoff(permissionsWait);
+                LOGW("TURN: разрешения для друзей не продлены (ошибка %d), повтор через %u с", m_lastError, wait / 1000);
+                permissionsAt = permissionsRetryAt = NowMs() + wait;
+            }
         }
         if (now >= refreshAt) {
-            Request(REFRESH, {AttrU32(A_LIFETIME, m_lifetime)}, nullptr);
-            refreshAt = now + std::max<uint32_t>(m_lifetime, 120) * 500;
+            Bytes resp;
+            if (Request(REFRESH, {AttrU32(A_LIFETIME, m_lifetime)}, &resp)) {
+                Parsed p;
+                if (Parse(resp.data(), resp.size(), p) && p.attrs.count(A_LIFETIME) && p.attrs[A_LIFETIME].size() == 4) {
+                    const Bytes& l = p.attrs[A_LIFETIME];
+                    m_lifetime = (uint32_t)l[0] << 24 | l[1] << 16 | l[2] << 8 | l[3];
+                }
+                now = NowMs();
+                refreshAt = now + std::max<uint32_t>(m_lifetime, 120) * 500;
+                allocationEnds = now + (uint64_t)m_lifetime * 1000;
+                refreshWait = 5000;
+            } else if (!m_quit && (m_lastError == 437 || NowMs() >= allocationEnds)) {
+                // the server forgot the allocation (437: allocation mismatch) or it ran out: a new relayed address,
+                // which Internet announces to the friends again
+                LOGW("TURN: адрес ретранслятора потерян (%s), запрашиваю новый",
+                     m_lastError == 437 ? "сервер его не знает" : "истёк срок");
+                now = NowMs();
+                if (Allocate()) {
+                    refreshAt = now + std::max<uint32_t>(m_lifetime, 120) * 500;
+                    allocationEnds = now + (uint64_t)m_lifetime * 1000;
+                    permissionsRetryAt = 0;
+                    refreshWait = 5000;
+                } else {
+                    std::lock_guard<std::mutex> lock(m_mutex);
+                    m_relayed = {};
+                    refreshAt = allocationEnds = now + backoff(refreshWait);  // Allocate again then
+                }
+            } else if (!m_quit) {
+                uint32_t wait = backoff(refreshWait);
+                LOGW("TURN: продление адреса ретранслятора не удалось (ошибка %d), повтор через %u с", m_lastError,
+                     wait / 1000);
+                refreshAt = NowMs() + wait;
+            }
         }
         for (auto it = m_peers.begin(); it != m_peers.end();) {  // friends that left
             if (now - it->second.lastMs > 120000) {

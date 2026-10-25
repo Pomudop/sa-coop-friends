@@ -142,20 +142,22 @@ void Internet::Worker() {
     // 3. joiners behind NAT announce their endpoint; we answer with packets that open our NAT for them
     m_signal.Start(nat::kDefaultSignalUrl, nat::SignalTopic(code), [this](const std::string& msg) { QueuePunch(msg); });
 
-    // 4. the relay's address once it has one (a joiner reads the channel's history when it connects), and a finite
-    // UPnP lease renewed while the server runs
-    bool relayDone = !m_turnEnabled;
+    // 4. the relay's address once it has one, and again when the relay had to take a new one (a joiner reads the
+    // channel's history when it connects, the latest RELAY wins), and a finite UPnP lease renewed while the server runs
+    nat::Endpoint announced;
     for (uint64_t renewAt = NowMs() + (uint64_t)m_upnp.leaseSeconds * 500; !m_quit;) {
-        if (!relayDone && (relay = m_turn.Relayed()).Valid()) {
-            relayDone = true;
+        relay = m_turn.Relayed();
+        if (relay.Valid() && (relay.ip != announced.ip || relay.port != announced.port)) {
+            if (announced.Valid() && ep.ip == announced.ip && ep.port == announced.port)
+                LOGW("Код приглашения указывает на старый адрес ретранслятора. Перезапустите сервер, чтобы получить новый код");
+            announced = relay;
             if (relay.ip != ep.ip) {
                 nat::SignalPublish(nat::kDefaultSignalUrl, nat::SignalTopic(code), "RELAY " + relay.ToString());
                 LOGI("Ретранслятор для друзей за любым NAT: %s", relay.ToString().c_str());
             }
         }
-        if (!relayDone && m_turn.GetStatus() == TurnRelay::Status::Failed) relayDone = true;
         bool renew = m_upnp.ok && m_upnp.leaseSeconds > 0;
-        if (relayDone && !renew) break;
+        if (!m_turnEnabled && !renew) break;
         Sleep(500);
         if (!renew || NowMs() < renewAt) continue;
         nat::UpnpResult again = nat::UpnpMapPort(m_port, "SA:COOP server");

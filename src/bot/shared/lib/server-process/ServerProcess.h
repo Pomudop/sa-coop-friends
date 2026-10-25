@@ -12,8 +12,9 @@ struct ServerOptions {
     std::string password;
     int maxPlayers = 2;
     std::string hostName;  // server.ini's "host": the role waits for this nickname
-    bool fakeTurn = false;  // internet = 1 with a TURN relay that refuses the login (FakeTurn): turn below is set for it
-    std::string turn;       // server.ini's "turn"
+    // internet = 1 with a FakeTurn relay: 0 none, 1 it refuses the login, 2 it loses the refresh (turn below is set)
+    int fakeTurn = 0;
+    std::string turn;  // server.ini's "turn"
 };
 
 class ServerProcess {
