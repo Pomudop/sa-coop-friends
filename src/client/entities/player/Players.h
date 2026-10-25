@@ -86,6 +86,10 @@ public:
     game::CVehicle* LastCar() const { return game::GetVehicle(m_lastCar); }
 
     static Players& Instance();
+    // Where this partner goes beside the host (heading in radians, as CPed::m_fCurrentRotation): the first partner to
+    // its right hand, the second to its left, the third behind it. One spot for all put three partners inside each
+    // other after a respawn, a scene's move or a late join (MP-10, MP-16).
+    static game::CVector BesideHost(const game::CVector& host, float heading, float dist);
 
 private:
     void SendLocalState();

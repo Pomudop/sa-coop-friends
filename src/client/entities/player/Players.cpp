@@ -259,6 +259,15 @@ bool __fastcall HookGangDriveByProcess(void* task, void* edx, CPed* ped) {
     return done;
 }
 
+CVector Beside(const CVector& host, float heading, float dist) {  // Players::BesideHost
+    int rank = 0;  // among the partners, by id: every game ranks them alike
+    for (auto& [id, p] : Net().Peers())
+        if (id != Net().HostId() && id < Net().MyId()) ++rank;
+    CVector right{std::cos(heading), std::sin(heading), 0.0f};
+    CVector side = rank == 0 ? right : rank == 1 ? right * -1.0f : CVector{right.y, -right.x, 0.0f};  // the last: behind
+    return host + side * dist;
+}
+
 // Two players dead or busted at about the same time come back at the same hospital or police station door, one inside
 // the other: the one whose game was done first stood stuck in the other, still in its respawn view, until that ended.
 // Ours comes back 1.5 m to the right when the other player's copy is at that door already (both at once: KeepApart).
@@ -272,7 +281,7 @@ void __cdecl HookRestorePlayer(CPlayerPed* player, CVector pos, float heading) {
             host && host->ped && host->hasState && host->mode == RemotePlayer::Mode::OnFoot && host->state.area == 0 &&
             !(host->state.flags & OnFootState::F_DEAD) && (player->GetPosition() - host->state.pos).Length() < 300.0f) {
             float h = host->state.rotation;
-            pos = host->state.pos + CVector{std::cos(h), std::sin(h), 0.0f} * 2.0f;  // at its right hand
+            pos = Beside(host->state.pos, h, 2.0f);  // at its right hand, left or behind
             heading = h * 57.29578f;
             LOGI("Respawn by the host: its mission goes on");
         }
@@ -828,6 +837,8 @@ void Players::OnGameShutdown() {
     }
     PlayerInfo(kRemoteSlot)->ped = nullptr;
 }
+
+CVector Players::BesideHost(const CVector& host, float heading, float dist) { return Beside(host, heading, dist); }
 
 void Players::SpawnRemote(RemotePlayer& rp) {
     if (rp.ped || !rp.hasState || !core::IsPlayerReady()) return;
@@ -1546,7 +1557,7 @@ void Players::FollowHost() {
     CVector hpos = hp->GetPosition(), mpos = me->GetPosition();
     if (flow::IsFollower() && (hpos - mpos).Length() > 25.0f) {
         float h = hp->CurrentRotation();
-        CVector p = hpos + CVector{std::cos(h) * 1.5f, std::sin(h) * 1.5f, 0};  // at the host's right hand
+        CVector p = BesideHost(hpos, h, 1.5f);  // at the host's right hand, left or behind
         int handle = GetPedRef(me);
         Cmd(0x04BB).I(hp->AreaCode()).Run();                      // SET_AREA_VISIBLE
         Cmd(0x0860).I(handle).I(hp->AreaCode()).Run();            // SET_CHAR_AREA_VISIBLE

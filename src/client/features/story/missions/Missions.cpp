@@ -1631,7 +1631,7 @@ void HandleCutscene(uint8_t from, Reader& r) {
         int8_t myArea = g_inScene ? g_sceneArea : me->AreaCode();
         float near = area != fromArea ? 60.0f : 300.0f;  // next to the host at a door; with it on a long move
         if (myArea != fromArea || (mine - CVector{from.x, from.y, from.z}).Length() > near) return;  // was not with the host
-        CVector p = CVector{to.x, to.y, to.z} + CVector{std::cos(heading), std::sin(heading), 0.0f} * 1.5f;  // its right hand
+        CVector p = Players::BesideHost(CVector{to.x, to.y, to.z}, heading, 1.5f);  // its right hand, left or behind
         if (g_inScene) {  // the scene's end puts us there, not back at the old place
             g_scenePos = p, g_sceneArea = (int8_t)area, g_sceneHeading = heading, g_csCar = -1;
         } else {
