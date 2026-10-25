@@ -21,10 +21,10 @@ static constexpr uint32_t kColorError = 0xFF6464FF;
 bool Server::Start(const Config& cfg) {
     m_cfg = cfg;
     if (m_cfg.maxPlayers < 1) m_cfg.maxPlayers = 1;
-    if (m_cfg.maxPlayers > kGamePlayers) {
-        LOGW("В max_players указано %d, но игра поддерживает только %d игроков. Мест будет %d.", m_cfg.maxPlayers, kGamePlayers,
-             kGamePlayers);
-        m_cfg.maxPlayers = kGamePlayers;
+    if (m_cfg.maxPlayers > kMaxPlayers) {
+        LOGW("В max_players указано %d, но игра поддерживает только %d игроков. Мест будет %d.", m_cfg.maxPlayers, kMaxPlayers,
+             kMaxPlayers);
+        m_cfg.maxPlayers = kMaxPlayers;
     }
     EnsureDirectory(m_cfg.dataDir + L"profiles");
     EnsureDirectory(m_cfg.dataDir + L"world");
@@ -56,7 +56,7 @@ bool Server::Start(const Config& cfg) {
         LoadWorld(WorldPath(), "world.b");
     }
 
-    for (int i = 0; i < kMaxPlayers; ++i) m_players[i].id = (uint8_t)i;
+    for (size_t i = 0; i < m_players.size(); ++i) m_players[i].id = (uint8_t)i;
     LOGI("Сервер \"%s\" запущен на порту %u, мест: %d%s", m_cfg.name.c_str(), m_cfg.port, m_cfg.maxPlayers,
          m_cfg.password.empty() ? "" : ", с паролем");
     m_running = true;
@@ -146,11 +146,11 @@ void Server::OnConnect(ENetPeer* peer) {
     char ip[64];
     enet_address_get_host_ip(&peer->address, ip, sizeof(ip));
     Player* slot = nullptr;
-    // every slot: a player coming back after a crash finds its old connection still holding one (it times out in 10 to
-    // 20 s); the number of players is checked at the hello, where that old one is let go
-    for (int i = 0; i < kMaxPlayers; ++i)
-        if (!m_players[i].used) {
-            slot = &m_players[i];
+    // every slot, the spare ones too: a player coming back after a crash finds its old connection still holding one (it
+    // times out in 10 to 20 s); the number of players is checked at the hello, where that old one is let go
+    for (auto& p : m_players)
+        if (!p.used) {
+            slot = &p;
             break;
         }
     if (!slot) {
@@ -813,7 +813,7 @@ Player* Server::FindByPeer(ENetPeer* peer) {
 }
 
 Player* Server::FindById(int id) {
-    if (id < 0 || id >= kMaxPlayers || !m_players[id].used) return nullptr;
+    if (id < 0 || id >= (int)m_players.size() || !m_players[id].used) return nullptr;
     return &m_players[id];
 }
 

@@ -5,6 +5,9 @@ reliable connections and fewer drops to the menu. The owner writes in Russian: a
 like the upstream docs, code comments in English like the upstream code.
 
 Read first, in this order:
+0. `docs/fork/HANDOFF.md` — where the work stands now: the PR chain, what waits for a test in the game, how to run
+   the multi-copy stand, what is next. All current work is on branch `four-players` (`main` has not got it yet).
+   Update its "Состояние" and "Дальше" at the end of a session.
 1. `docs/fork/KNOWLEDGE.md` — everything learned so far: architecture facts, traffic numbers, verified findings,
    community PRs, upstream issues, decisions, current state.
 2. `docs/fork/ROADMAP.md` — phases, priorities, decisions.

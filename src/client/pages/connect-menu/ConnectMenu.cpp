@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include "common/api/nat-traversal/NatTraversal.h"
+#include "common/api/protocol/Protocol.h"
 #include "common/config/version/Version.h"
 #include "common/lib/util/Util.h"
 #include "entities/session/Flow.h"
@@ -298,6 +299,11 @@ void RenderConnectMenu() {
         cy += rowH + 22 * s;
         if (g_tab == 1) {  // the host decides for the whole game; saved with the other settings when the server starts
             w::Checkbox("ff", cx, cy, TR("Урон по напарнику", "Friendly fire"), Cfg().friendlyFire);
+            // the number of players, the host included: right of the checkbox, centred on its line
+            float selW = 280 * s;
+            int d = w::Selector("players", cx + cw - selW, cy + (lh * 0.8f - rowH) * 0.5f, selW, rowH,
+                                Format(TR("Игроков: %d", "Players: %d"), Cfg().maxPlayers));
+            if (d) Cfg().maxPlayers = std::clamp(Cfg().maxPlayers + d, 2, proto::kMaxPlayers);
             cy += lh * 0.8f + 22 * s;
         }
 

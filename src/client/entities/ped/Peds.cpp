@@ -550,13 +550,13 @@ void Peds::ScanOwned() {
 
     // a wanted other player (while we are not): our cops by it go to its game (CanGiveAwayType). Not for one star: one cop
     // chases then, and the others handed over stood by the player and kept its star from fading (issue #56)
-    bool chased = false;
-    uint8_t chasedBy = 0;
-    CVector chasedAt;
+    // Each cop goes to the wanted player nearest to it: the last one of the loop took them all, and of two wanted players
+    // apart one had no chase at all (MP-08)
+    std::vector<std::pair<uint8_t, CVector>> wanted;
     if (me && OurWantedLevel() == 0)
         for (auto& [id, rp] : Players::Instance().All())
             if (rp.hasState && rp.state.wanted > 1 && !(rp.state.flags & OnFootState::F_DEAD) && rp.state.area == me->AreaCode())
-                chased = true, chasedBy = id, chasedAt = rp.state.pos;
+                wanted.push_back({id, rp.state.pos});
 
     for (int i = 0; i < pool->size; ++i) {
         if (pool->byteMap[i] < 0) continue;
@@ -588,10 +588,14 @@ void Peds::ScanOwned() {
             Announce(n);
             continue;
         }
-        if (np->pedType == PED_TYPE_COP && chased) {
+        if (np->pedType == PED_TYPE_COP && !wanted.empty()) {
             CVector p = ped->GetPosition();
-            if ((p - chasedAt).Length() < 50.0f && (p - me->GetPosition()).Length() > 20.0f && QueueGiveAway(ped, chasedBy))
-                LOGD("Cop %04X goes to the game of wanted player %d", np->netId, chasedBy);
+            const std::pair<uint8_t, CVector>* chase = nullptr;
+            float nearest = 50.0f;
+            for (auto& w : wanted)
+                if (float dw = (p - w.second).Length(); dw < nearest) nearest = dw, chase = &w;
+            if (chase && (p - me->GetPosition()).Length() > 20.0f && QueueGiveAway(ped, chase->first))
+                LOGD("Cop %04X goes to the game of wanted player %d", np->netId, chase->first);
         }
         uint64_t interval = d < 40.0f ? 100 : (d < 80.0f ? 200 : 400);
         if (now - np->lastSendMs >= interval) SendState(*np);
@@ -1267,9 +1271,12 @@ void Peds::OnSessionEnd() {
     m_wasReady = false;
 }
 
-// The player left: its people stay in this game as its own (deleted, they left its cars driverless in the street, as MTA
-// keeps the elements and picks a new syncer).
-void Peds::OnPeerLeave(uint8_t id) { DropMirrorsOf(id, true); }
+// The player left: its people stay in the world (deleted, they left its cars driverless in the street, as MTA keeps the
+// elements and picks a new syncer). One game, its heir, keeps them as its own and announces them again; with three or
+// four players every game did, and each person stood twice or three times in the others' games (MP-03). The other
+// games let their copies go: a copy has no AI of its own and cannot simply become the heir's, whose announcement brings
+// a new one (into the heir's car, which Vehicles keeps).
+void Peds::OnPeerLeave(uint8_t id) { DropMirrorsOf(id, Net().HeirOf(id) == Net().MyId()); }
 
 void Peds::DropMirrorsOf(uint8_t id, bool keep) {
     std::vector<uint16_t> mirrors;

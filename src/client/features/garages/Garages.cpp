@@ -35,6 +35,7 @@ using game::script::Cmd;
 constexpr uintptr_t kGarages = 0x96C048, kNumGarages = 0x96C024;  // CGarages::aGarages (CGarage 0xD8 each), NumGarages
 constexpr uintptr_t kStoredCars = 0x96ABD8;                         // CGarages::aCarsInSafeHouse: 4 CStoredCar (0x40) a house
 constexpr size_t kGarageSize = 0xD8;
+// GARAGE_CARS: u8 the partner who opened the garage, then the cars (MP-07)
 enum : uint8_t { GARAGE_STORE = 1, GARAGE_KEPT = 2, GARAGE_BRING_OUT = 3, GARAGE_CARS = 4, GARAGE_BACK = 5 };
 constexpr size_t kStoredCarSize = 0x40;
 
@@ -171,6 +172,7 @@ void Handle(uint8_t from, Reader& r) {
         Writer w(proto::G_GARAGE);
         w.U8(GARAGE_CARS);
         w.U8(index);
+        w.U8(from);  // relayed to every game: with two or three partners each one brought the same cars out (MP-07)
         std::vector<uint8_t*> cars;
         for (int k = 0; k < 4; ++k)
             if (Ref<uint16_t>((uintptr_t)store + (uintptr_t)k * kStoredCarSize + 0x12)) cars.push_back(store + k * kStoredCarSize);
@@ -183,6 +185,7 @@ void Handle(uint8_t from, Reader& r) {
         Net().Send(proto::CH_RELIABLE, w);
         LOGI("Garage %s opened for player %d: its %zu car(s) go out there", NameOf(g).c_str(), from, cars.size());
     } else if (op == GARAGE_CARS && from == Net().HostId() && !Net().IsHost()) {
+        if (uint8_t to = r.U8(); !r.Ok() || to != Net().MyId()) return;  // another partner opened it
         uint8_t n = r.U8(), cars[4 * kStoredCarSize] = {};
         for (int k = 0; k < n && k < 4; ++k) {
             std::vector<uint8_t> c = r.Bytes(kStoredCarSize);

@@ -288,6 +288,52 @@ void ReservedHost(Run& r) {
     r.Check(r.WaitFor(announced, 2000), "Alpha не узнал, что хост вошёл");
 }
 
+// MP-02: four players in one game, the fifth is told there is no place; a state reaches all three others
+void FourPlayers(Run& r) {
+    const char* names[] = {"Alpha", "Bravo", "Charlie", "Delta"};
+    std::vector<BotClient*> bots;
+    for (const char* n : names) {
+        bots.push_back(&r.Bot(n));
+        if (!r.JoinOrFail(*bots.back())) return;
+    }
+    r.Check(bots[3]->Welcome().players.size() == 3, "четвёртый вошедший не увидел в приветствии троих остальных");
+    r.Check(r.WaitFor([&] { return bots[0]->Joins().size() >= 3; }, 2000), "хост не узнал о входе всех троих");
+    auto& fifth = r.Bot("Echo");
+    r.Check(!r.Join(fifth) && Contains(fifth.RejectReason(), "нет свободных мест"),
+            "пятый игрок на сервере на четверых не получил «нет свободных мест»");
+    for (auto* b : bots) b->SetStatus(STATUS_INGAME);
+    r.Pump(300);
+    for (uint32_t i = 0; i < 30; ++i) {
+        bots[0]->Send(CH_STATE, State(i));
+        r.Pump(33);
+    }
+    r.Pump(300);
+    for (int i = 1; i < 4; ++i) {
+        size_t got = CountFrom(*bots[i], G_PLAYER_ONFOOT, bots[0]->Id());
+        r.Check(got >= 28, Format("%s получил %u из 30 состояний хоста", bots[i]->Name().c_str(), (unsigned)got));
+    }
+}
+
+// NET-03: a player back after a crash on a full server joins at once: its old connection holds a slot until it times
+// out, and a spare slot takes the new one
+void FullServerReturn(Run& r) {
+    const char* names[] = {"Alpha", "Bravo", "Charlie", "Delta"};
+    std::vector<BotClient*> bots;
+    for (const char* n : names) {
+        bots.push_back(&r.Bot(n));
+        if (!r.JoinOrFail(*bots.back())) return;
+    }
+    uint8_t oldId = bots[1]->Id();
+    bots[1]->Crash();
+    r.Pump(3500);  // the old connection gives way after 3 s of silence (Server::HandleHello)
+    auto& back = r.Bot("Bravo");
+    if (!r.Check(r.Join(back), "вернувшийся на полный сервер не вошёл: " + back.RejectReason())) return;
+    r.Check(r.WaitFor([&] { return bots[0]->LeftId(oldId); }, 2000), "хост не узнал, что старое соединение Bravo закрыто");
+    auto& fifth = r.Bot("Echo");
+    r.Check(!r.Join(fifth) && Contains(fifth.RejectReason(), "нет свободных мест"),
+            "после возвращения Bravo на сервер вошёл пятый игрок");
+}
+
 // NET-01: every check of a hello comes before the old connection of its nickname is let go
 void PasswordBeforeReplace(Run& r) {
     auto& a = r.Bot("Alpha");
@@ -377,6 +423,10 @@ const std::vector<Entry>& Entries() {
         {{"crash-return", "вылет и возвращение под тем же ником", nullptr, true}, {}, CrashReturn},
         {{"host-change", "хост вышел: роль переходит оставшемуся", nullptr, true}, {}, HostChange},
         {{"reserved-host", "host = в server.ini: роль ждёт этот ник", nullptr, true}, {"", 2, "Boss"}, ReservedHost},
+        {{"four-players", "MP-02: четверо в игре, пятому «нет мест», состояния доходят до всех", nullptr, true},
+         {"", 4}, FourPlayers},
+        {{"full-server-return", "NET-03: возвращение после вылета на полный сервер на четверых", nullptr, true},
+         {"", 4}, FullServerReturn},
         {{"password-before-replace", "NET-01: неверный пароль с ником зависшего игрока, верный — заменяет", nullptr, true},
          {"secret"}, PasswordBeforeReplace},
         {{"protocol-zero", "NET-02: приветствие без версии", nullptr, true}, {}, ProtocolZero},

@@ -20,7 +20,7 @@ struct Config {
     std::string motd = "Добро пожаловать! Чтобы увидеть список команд, напишите /help.";
     bool friendlyFire = false;  // the players can hurt each other
     uint16_t port = 7788;
-    int maxPlayers = 2;
+    int maxPlayers = 4;  // the host included, up to proto::kMaxPlayers
     std::wstring dataDir;    // profiles/, world/
     std::wstring worldFile;  // optional initial world save (passed by the launcher)
     bool newGame = false;    // the host starts a new game: the stored world belongs to an older one
@@ -104,7 +104,9 @@ private:
     Config m_cfg;
     ENetHost* m_host = nullptr;
     Internet m_internet;
-    std::array<Player, proto::kMaxPlayers> m_players{};
+    // two spare slots: a connection takes one before its hello, and a player back after a crash on a full server
+    // found none while its old connection held its own (NET-03). Joined players stay within m_cfg.maxPlayers.
+    std::array<Player, proto::kMaxPlayers + 2> m_players{};
     volatile bool m_running = false;
     std::vector<uint8_t> m_world;  // current world save
     std::string m_worldLabel;

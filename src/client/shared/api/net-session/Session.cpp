@@ -46,6 +46,13 @@ void Session::Disconnect(const std::string& reason) {
     if (wasOnline && onOffline) onOffline(reason);
 }
 
+uint8_t Session::HeirOf(uint8_t leaving) const {
+    uint8_t heir = m_myId;
+    for (auto& [id, p] : m_peers)
+        if (id != leaving && id < heir) heir = id;
+    return heir;
+}
+
 const PeerInfo* Session::Peer(uint8_t id) const {
     auto it = m_peers.find(id);
     return it == m_peers.end() ? nullptr : &it->second;

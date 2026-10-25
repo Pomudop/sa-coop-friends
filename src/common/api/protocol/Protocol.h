@@ -13,10 +13,9 @@
 
 namespace coop::proto {
 
-constexpr int kMaxPlayers = 4;  // hard protocol limit (the game client supports 2 at the moment)
-// what the game client supports: the other player's character takes the game's second player slot (CWorld::Players[1]),
-// and a third player's could not be made (fires, props and trains are keyed by the sender's own ids too)
-constexpr int kGamePlayers = 2;
+// players in a session, the host included: the fork aims at 4 friends and tests 4 (PR #32 allowed 8; the 4-bit owner
+// part of net ids allows 15)
+constexpr int kMaxPlayers = 4;
 constexpr uint8_t kServerId = 255;
 constexpr size_t kMaxChatLen = 160;
 constexpr size_t kWorldChunk = 16 * 1024;
