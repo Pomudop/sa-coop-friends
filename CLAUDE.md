@@ -19,8 +19,12 @@ Rules:
 - Any protocol change bumps the fork protocol number (`1000 + upstream protocol`, BACKLOG INF-03).
 - Follow the author's style: FSD layers, `TR("ru", "en")` for every game text, comments explain why and name engine
   functions next to addresses, network data goes through `Reader` and is validated before touching the engine.
-- Claude cannot run the game. Network/server changes are verified with the headless bot (INF-05); game changes are
-  verified by the owner on the multi-copy stand. Say which was done.
+- Claude cannot run the game. Network/server changes are verified with the bot (`coop-bot.exe`, scenarios in
+  `src/bot/features/scenarios/Scenarios.cpp`): `python tools/build.py server bot`, then
+  `wine build/release/bin/coop-bot.exe` on Linux (Wine with wine32) or `tools/fork/bot-tests.ps1` on Windows. A network
+  bug gets a scenario first. Game changes are verified by the owner on the multi-copy stand. Say which was done.
+- Building on Linux: llvm-mingw `20261006` `ucrt-ubuntu-22.04-x86_64`, with wrapper scripts named
+  `toolchain/llvm-mingw/bin/i686-w64-mingw32-{clang,clang++,windres}.exe` (symlinks break clang++'s driver mode).
 - Keep fork-only docs in `docs/fork/`; behaviour meant for upstream goes into `docs/ARCHITECTURE.md`.
 - Update `docs/fork/KNOWLEDGE.md` and the backlog when something new is learned or a task is done.
 - Legal (LEGAL.md, NOTICE.md): never commit game files, data extracted from them, decompiled or leaked Rockstar code
