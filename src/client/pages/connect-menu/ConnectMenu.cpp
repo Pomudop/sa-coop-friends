@@ -149,9 +149,9 @@ void RenderConnectMenu() {
     w::BeginFrame();
     float cy = w::Panel(x, y, W, H, "SA:COOP") + 8 * s;
     float vx = x + W - 52 * s;
-    g.Text(FONT_MENU_SMALL, vx, y + 36 * s, "v" COOP_VERSION_STR, kSaSlate, TEXT_RIGHT);
+    g.Text(FONT_MENU_SMALL, vx, y + 36 * s, COOP_EDITION " v" COOP_VERSION_STR, kSaSlate, TEXT_RIGHT);
     // the language switch left of the version, the pointer at the active one; the choice is saved at once
-    float lx = vx - g.TextWidth(FONT_MENU_SMALL, "v" COOP_VERSION_STR) - 34 * s;
+    float lx = vx - g.TextWidth(FONT_MENU_SMALL, COOP_EDITION " v" COOP_VERSION_STR) - 34 * s;
     for (int en = 1; en >= 0; --en) {
         const char* label = en ? "EN" : "RU";
         float tw = g.TextWidth(FONT_MENU_SMALL, label);

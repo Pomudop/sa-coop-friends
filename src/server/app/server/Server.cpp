@@ -284,6 +284,13 @@ void Server::HandleHello(Player& p, Reader& r) {
     };
     // the version comes first in every hello: an older client's shorter one was told "damaged data" instead
     bool read = h.Read(r);
+    // the original SA:COOP numbers its protocol below the fork's base: say which mod to install, not just "another
+    // version" (the original's server says the latter to a fork client, which is enough there)
+    if (h.protocol != 0 && h.protocol < kForkProtocolBase)
+        return reject("это сервер SA:COOP Friends, а у вас оригинальный SA:COOP. Поставьте SA:COOP Friends той же "
+                      "версии, что у хоста",
+                      "this is a SA:COOP Friends server and you have the original SA:COOP. Install SA:COOP Friends of "
+                      "the host's version");
     if (h.protocol != 0 && h.protocol != kProtocolVersion)
         return reject(Format("у вас другая версия мода (у сервера %u, у вас %u). Версия должна быть одинаковой у обоих",
                              kProtocolVersion, h.protocol),

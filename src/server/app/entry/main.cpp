@@ -54,7 +54,7 @@ static void WriteDefaultConfig(const std::wstring& path) {
 int wmain(int argc, wchar_t** argv) {
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
-    SetConsoleTitleW(L"SA:COOP server");
+    SetConsoleTitleW(L"SA:COOP Friends server");
 
     std::wstring dir = ModuleDir();
     std::wstring configPath = dir + L"server.ini";

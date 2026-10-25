@@ -1,4 +1,4 @@
-#define COOP_FILE_DESCRIPTION "SA:COOP server"
+#define COOP_FILE_DESCRIPTION "SA:COOP Friends server"
 #define COOP_ORIGINAL_NAME "coop-server.exe"
 #define COOP_FILE_TYPE VFT_APP
 #include "common/config/version/VersionInfo.rc"

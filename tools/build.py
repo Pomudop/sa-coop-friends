@@ -257,6 +257,7 @@ def assemble_dist(debug):
     licenses = dist / "coop" / "licenses"  # the binaries carry ENet and MinHook: their notices go along
     licenses.mkdir()
     shutil.copy2(ROOT / "LICENSE", licenses / "SA-COOP.txt")
+    shutil.copy2(ROOT / "NOTICE.md", licenses / "NOTICE.txt")  # fork: who made what, the original author first
     shutil.copy2(ROOT / "third_party" / "enet" / "LICENSE", licenses / "ENet.txt")
     shutil.copy2(ROOT / "third_party" / "minhook" / "LICENSE.txt", licenses / "MinHook.txt")
     archive = shutil.make_archive(str(ROOT / "dist" / "SA-COOP"), "zip", dist)

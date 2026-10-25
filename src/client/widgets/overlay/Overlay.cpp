@@ -32,10 +32,10 @@ void RenderOverlay() {
     // status line, bottom-right
     std::string line;
     if (net.Online()) {
-        line = Format(TR("SA:COOP · %s · %u мс", "SA:COOP · %s · %u ms"),
+        line = Format(TR(COOP_NAME " · %s · %u мс", COOP_NAME " · %s · %u ms"),
                       net.IsHost() ? TR("хост", "host") : TR("напарник", "partner"), net.Rtt());
     } else if (frontend) {
-        line = TR("SA:COOP " COOP_VERSION_STR " · F9: совместная игра", "SA:COOP " COOP_VERSION_STR " · F9: co-op");
+        line = TR(COOP_NAME " " COOP_VERSION_STR " · F9: совместная игра", COOP_NAME " " COOP_VERSION_STR " · F9: co-op");
     }
     if (!line.empty())
         g.Text(FONT_SMALL, g.Width() - 16 * s, g.Height() - g.LineHeight(FONT_SMALL) - 10 * s, line, 0xC0FFFFFF,
