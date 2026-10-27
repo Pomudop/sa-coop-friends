@@ -94,6 +94,21 @@ void Server::Run() {
             LOGW("Хост не прислал свежий мир за 10 с. Отправляю сохранённый");
             FlushWorldRequests(false);
         }
+        if (m_cfg.hosted) {
+            if (m_hostLostAt && NowMs() - m_hostLostAt > 180000) {
+                SendChat(nullptr, kServerId, kColorError, "Хост не вернулся за 3 минуты. Сервер закрывается.",
+                         "The host did not come back in 3 minutes. The server closes.");
+                enet_host_flush(m_host);
+                LOGW("Хост не вернулся за 3 минуты: сервер останавливается");
+                Stop();
+            }
+            if (JoinedCount() > 0) m_emptySince = 0;
+            else if (!m_emptySince) m_emptySince = NowMs();
+            else if (NowMs() - m_emptySince > 60000) {
+                LOGI("На сервере никого нет минуту: сервер останавливается");
+                Stop();
+            }
+        }
         if (NowMs() - m_lastPings > 2000) {
             m_lastPings = NowMs();
             SendPings();
@@ -204,6 +219,17 @@ void Server::Leave(Player& p, LeaveReason why, const std::string& reason) {
         en = Format(why == LEAVE_TIMEOUT ? "%s lost connection to the server." : "%s left the game.", name.c_str());
     }
     SendChat(nullptr, kServerId, why == LEAVE_KICKED ? kColorServer : kColorInfo, msg, en);
+    if (wasHost && m_cfg.hosted) {
+        if (why == LEAVE_QUIT) {  // the host left the game: the session is over, as when the server died with it
+            LOGI("Хост вышел из игры: сервер останавливается");
+            Stop();
+            return;
+        }
+        m_hostLostAt = NowMs();  // its game crashed or hung: the partners wait for it
+        SendChat(nullptr, kServerId, kColorServer,
+                 "Хост пропал (вылет игры?). Ждём его до 3 минут: пусть перезапустит игру и нажмёт «Создать игру».",
+                 "The host is gone (did the game crash?). Waiting for them up to 3 minutes: restart the game and press \"Host a game\".");
+    }
     if (wasHost) EnsureHost();
 }
 
@@ -372,6 +398,10 @@ void Server::HandleHello(Player& p, Reader& r) {
     LOGI("%s вошёл как игрок %d%s (версия %s)", p.name.c_str(), p.id, p.isHost ? " [ХОСТ]" : "", h.version.c_str());
     SendChat(nullptr, kServerId, kColorInfo, Format("%s зашёл в игру%s.", p.name.c_str(), p.isHost ? " (хост)" : ""),
              Format("%s joined the game%s.", p.name.c_str(), p.isHost ? " (host)" : ""));
+    if (p.isHost && m_hostLostAt) {
+        m_hostLostAt = 0;
+        LOGI("Хост вернулся");
+    }
     // with a reserved host nickname the role waits for that player
     if (wel.hostId == 255 && !p.isHost && m_cfg.hostName.empty()) EnsureHost();
 }

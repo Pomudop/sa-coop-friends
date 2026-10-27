@@ -27,6 +27,9 @@ struct Config {
     std::string hostName;    // nickname that gets the host role (empty = first player)
     bool internet = true;    // UPnP + STUN + invite code + hole punching
     std::string turn;        // optional TURN relay for friends behind any NAT (see TurnRelay)
+    // SES-05: started by the host's game (--hosted). It no longer dies with that game: a host that quits ends it, one
+    // whose game crashed (a timeout) is waited for 3 minutes while the partners play on; empty for a minute, it ends.
+    bool hosted = false;
 };
 
 struct Player {
@@ -111,6 +114,8 @@ private:
     std::vector<uint8_t> m_world;  // current world save
     std::string m_worldLabel;
     uint64_t m_lastPings = 0;
+    uint64_t m_hostLostAt = 0;  // hosted: the host's connection timed out then (0: not lost)
+    uint64_t m_emptySince = 0;  // hosted: nobody joined since
     std::vector<uint8_t> m_worldWaiters;   // player ids waiting for the world save
     uint64_t m_worldWantedTime = 0;        // when the host was asked for a fresh snapshot (0 = not asked)
     bool m_prologue = false;               // the host plays a new game's prologue: partners wait for its end

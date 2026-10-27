@@ -65,6 +65,7 @@ public:
 
     std::vector<std::string> notes, failures;
     FakeTurn* turn = nullptr;  // the server's relay when the scenario has one (ServerOptions::fakeTurn)
+    ServerProcess* server = nullptr;  // the scenario's own server (null when connecting to another one)
 
 private:
     std::string m_host;
@@ -404,6 +405,33 @@ void ProtocolZero(Run& r) {
     r.Check(!r.Join(z) && z.Rejected(), "приветствие с протоколом 0 принято");
 }
 
+// SES-05: the host's game crashed: the server its game started waits for it, the partner stays, the host comes back
+void HostedHostCrash(Run& r) {
+    auto& a = r.Bot("Alpha");
+    auto& b = r.Bot("Bravo");
+    if (!r.JoinOrFail(a) || !r.JoinOrFail(b)) return;
+    a.Crash();
+    bool told = r.WaitFor([&] {
+        return std::any_of(b.Chats().begin(), b.Chats().end(), [](auto& c) { return Contains(c.text, "Хост пропал"); });
+    }, 25000);
+    r.Check(told, "напарнику не сказали, что хост пропал и его ждут");
+    r.Pump(2000);
+    r.Check(!r.server || r.server->Alive(), "сервер закрылся вместе с вылетевшим хостом");
+    r.Check(!b.Disconnected(), "напарника выкинуло, пока ждали хоста");
+    auto& back = r.Bot("Alpha");
+    if (!r.Check(r.Join(back), "хост не вернулся на свой сервер: " + back.RejectReason())) return;
+    r.Check(back.Welcome().hostId == back.Id(), "вернувшийся хост не получил роль хоста");
+}
+
+// SES-05: the host left the game: the server its game started closes, as it did when it died with the game
+void HostedHostQuit(Run& r) {
+    auto& a = r.Bot("Alpha");
+    auto& b = r.Bot("Bravo");
+    if (!r.JoinOrFail(a) || !r.JoinOrFail(b)) return;
+    a.Quit();
+    r.Check(r.WaitFor([&] { return r.server && !r.server->Alive(); }, 5000), "хост вышел, а сервер не закрылся");
+}
+
 struct Entry {
     ScenarioInfo info;
     ServerOptions options;
@@ -435,6 +463,11 @@ const std::vector<Entry>& Entries() {
         {{"relay-refresh", "NET-05: продление ретранслятора потеряно, потом 437 — повтор и новый адрес (~80 с)", nullptr,
           true},
          {"", 2, "", 2}, RelayRefresh},
+        {{"hosted-host-crash", "SES-05: игра хоста вылетела — сервер ждёт, напарник остаётся, хост возвращается (~25 с)",
+          nullptr, true},
+         {"", 2, "Alpha", 0, "", true}, HostedHostCrash},
+        {{"hosted-host-quit", "SES-05: хост вышел — сервер его игры закрывается", nullptr, true},
+         {"", 2, "Alpha", 0, "", true}, HostedHostQuit},
     };
     return list;
 }
@@ -479,6 +512,7 @@ Result RunScenario(size_t index, const Settings& s) {
     }
     Run r(external ? s.connect : "127.0.0.1", port);
     if (options.fakeTurn) r.turn = &turn;
+    if (!external) r.server = &server;
     e.run(r);
     res.notes = r.notes;
     res.failures = r.failures;

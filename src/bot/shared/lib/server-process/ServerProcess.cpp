@@ -18,7 +18,7 @@ bool ServerProcess::Start(const std::wstring& exe, const std::wstring& dir, uint
     WriteFileBytes(dir + L"server.ini", ini.data(), ini.size(), false);
     m_log = dir + L"data\\server.log";
 
-    std::wstring cmd = L"\"" + exe + L"\" --config \"" + dir + L"server.ini\" --data \"" + dir + L"data\"";
+    std::wstring cmd = L"\"" + exe + L"\" --config \"" + dir + L"server.ini\" --data \"" + dir + L"data\"" + std::wstring(opt.hosted ? L" --hosted" : L"");
     STARTUPINFOW si{};
     si.cb = sizeof(si);
     // a console of its own without a window: the server reads commands from its console and would take the bot's

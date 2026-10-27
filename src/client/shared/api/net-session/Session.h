@@ -36,6 +36,8 @@ public:
     uint8_t MyId() const { return m_myId; }
     uint8_t HostId() const { return m_hostId; }
     const std::string& FailReason() const { return m_failReason; }
+    // SES-03: the last session ended by a lost connection (not a kick, a refusal or our own leaving)
+    bool LostConnection() const { return m_lost; }
     const std::string& ServerName() const { return m_serverName; }
     bool FriendlyFire() const { return Online() && m_friendlyFire; }  // the host let the players hurt each other
     const std::map<uint8_t, PeerInfo>& Peers() const { return m_peers; }
@@ -76,6 +78,7 @@ private:
     NetClient m_net;
     State m_state = State::Offline;
     std::string m_failReason;
+    bool m_lost = false;
     std::string m_nick, m_password;
     bool m_wantsHost = false;
     uint8_t m_myId = 255, m_hostId = 255;

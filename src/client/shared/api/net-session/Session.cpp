@@ -23,6 +23,7 @@ void Session::Connect(const std::string& host, uint16_t port, const std::string&
     m_password = password;
     m_wantsHost = wantsHost;
     m_failReason.clear();
+    m_lost = false;
     m_peers.clear();
     m_inviteCode.clear();
     m_worldRetries = 0;
@@ -115,6 +116,7 @@ void Session::Update() {
                                   "host create the game again and confirm the Windows prompt. Also check the address and the port.");
         } else if (m_state == State::Online) {
             m_state = State::Failed;
+            m_lost = m_failReason.empty();  // a kick or a refusal set a reason before the connection closed
             if (m_failReason.empty()) m_failReason = TR("Соединение с сервером потеряно.", "Lost connection to the server.");
         }
         m_net.Stop();

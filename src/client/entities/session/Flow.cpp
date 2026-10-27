@@ -38,9 +38,11 @@ std::string g_password, g_hostAddr;
 bool g_isHosting = false;
 uint64_t g_phaseTime = 0;
 int g_connectAttempts = 0;
+bool g_resumed = false;           // host: joined the server its crashed game left running (SES-05)
+uint64_t g_reconnectUntil = 0;    // partner: the connection was lost, retried until then (SES-03)
+uint64_t g_nextReconnect = 0;
 
 HANDLE g_serverProcess = nullptr;
-HANDLE g_serverJob = nullptr;
 
 bool g_worldUploadPending = false;  // host: a partner asked for a fresh world
 bool g_keepSent = false;            // host: the stored world goes out meanwhile, a fresh one once it can be saved
@@ -72,6 +74,25 @@ void Fail(const std::string& why) {
 
 // A server of this install left by an earlier game whose process hung after a crash holds the port: the new server
 // cannot open it and this game would join the old one (a wrong password, an old world)
+// SES-05: the server a crashed game of this install left running, if any: its partners wait in it for the host
+HANDLE FindLeftoverServer(const std::wstring& exe) {
+    HANDLE found = nullptr;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return nullptr;
+    PROCESSENTRY32W pe{sizeof(pe)};
+    for (BOOL ok = Process32FirstW(snap, &pe); ok && !found; ok = Process32NextW(snap, &pe)) {
+        if (_wcsicmp(pe.szExeFile, L"coop-server.exe")) continue;
+        HANDLE p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE, FALSE, pe.th32ProcessID);
+        if (!p) continue;
+        wchar_t path[MAX_PATH];
+        DWORD n = MAX_PATH;
+        if (QueryFullProcessImageNameW(p, 0, path, &n) && !_wcsicmp(path, exe.c_str())) found = p;
+        else CloseHandle(p);
+    }
+    CloseHandle(snap);
+    return found;
+}
+
 void StopLeftoverServers(const std::wstring& exe) {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap == INVALID_HANDLE_VALUE) return;
@@ -122,19 +143,13 @@ bool StartServerProcess(const std::wstring& worldPath, bool newGame) {
     LetServerThroughFirewall(exe);
     std::wstring cmd = L"\"" + exe + L"\" --port " + std::to_wstring(g_port) + L" --data \"" + cfg.coopDir +
                        Utf8ToWide(cfg.serverData) + L"\" --name \"" + Utf8ToWide(cfg.nickname) + L"\" --host \"" +
-                       Utf8ToWide(cfg.nickname) + L"\"";
+                       Utf8ToWide(cfg.nickname) + L"\" --hosted";
     if (!g_password.empty()) cmd += L" --password \"" + Utf8ToWide(g_password) + L"\"";
     if (!worldPath.empty()) cmd += L" --world \"" + worldPath + L"\"";
     if (newGame) cmd += L" --new-game";
     cmd += cfg.friendlyFire ? L" --friendly-fire 1" : L" --friendly-fire 0";  // the checkbox wins over server.ini
     cmd += L" --max " + std::to_wstring(cfg.maxPlayers);                      // so does the number of players
 
-    if (!g_serverJob) {
-        g_serverJob = CreateJobObjectW(nullptr, nullptr);
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION info{};
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        SetInformationJobObject(g_serverJob, JobObjectExtendedLimitInformation, &info, sizeof(info));
-    }
     STARTUPINFOW si{sizeof(si)};
     PROCESS_INFORMATION pi{};
     std::vector<wchar_t> buf(cmd.begin(), cmd.end());
@@ -150,8 +165,8 @@ bool StartServerProcess(const std::wstring& worldPath, bool newGame) {
                 : Format(TR("Не удалось запустить сервер (ошибка %lu).", "Could not start the server (error %lu)."), err));
         return false;
     }
-    // the server dies together with the game
-    AssignProcessToJobObject(g_serverJob, pi.hProcess);
+    // SES-05: the server no longer dies with the game (it was in a kill-on-close job): a crash of the host's game left
+    // the partners in the menu. It ends itself when the host quits, has not come back in 3 minutes or nobody is in it.
     CloseHandle(pi.hThread);
     g_serverProcess = pi.hProcess;
     LOGI("Local server started (pid %lu)", pi.dwProcessId);
@@ -329,6 +344,17 @@ void Host(int slot, uint16_t port, const std::string& password) {
         if (core::SaveWorldSnapshot(snap)) world = Cfg().coopDir + L"world\\host_snapshot.b";
     }
     StopServerProcess();
+    g_resumed = false;
+    if (HANDLE old = FindLeftoverServer(cfg.coopDir + L"coop-server.exe")) {
+        g_serverProcess = old;
+        g_resumed = true;
+        ui::TheChat().AddSystem(TR("Сервер прошлой игры ещё работает, напарники ждут в нём. Подключаемся к нему...",
+                                   "The last game's server is still running with the partners in it. Joining it..."));
+        LOGI("Resuming the server a crashed game left running");
+        SetPhase(Phase::StartingServer);
+        g_connectAttempts = 0;
+        return;
+    }
     if (!StartServerProcess(world, slot < 0)) return;
     SetPhase(Phase::StartingServer);
     g_connectAttempts = 0;
@@ -367,7 +393,8 @@ void Leave() {
     SaveProfileNow();  // saved every 30 s otherwise: up to that much of the partner's progress was lost on leaving
     Net().Disconnect();
     StopServerProcess();
-    g_isHosting = g_follower = g_prologueWait = g_worldNone = g_progressUpload = g_hasSpot = false;
+    g_isHosting = g_follower = g_prologueWait = g_worldNone = g_progressUpload = g_hasSpot = g_resumed = false;
+    g_reconnectUntil = 0;
     g_pendingWorld.clear();
     SetPhase(Phase::Idle);
     ui::TheChat().AddSystem(TR("Вы вышли из совместной игры.", "You left the co-op game."));
@@ -439,6 +466,29 @@ void Update() {
     if (!online && wasOnline && g_phase != Phase::Idle) {
         SetPhase(Phase::Idle);
         g_error = net.FailReason();
+        // SES-03: a partner whose connection dropped (not kicked, not refused, not leaving) joins again by itself
+        if (!g_isHosting && net.LostConnection() && !g_hostAddr.empty()) {
+            g_reconnectUntil = NowMs() + 120000;
+            g_nextReconnect = NowMs() + 3000;
+            ui::TheChat().AddSystem(TR("Связь с хостом пропала. Переподключаемся сами, до 2 минут...",
+                                       "Lost the connection to the host. Reconnecting by ourselves, up to 2 minutes..."));
+        }
+    }
+    if (online && g_reconnectUntil) {
+        g_reconnectUntil = 0;
+        ui::TheChat().AddSystem(TR("Переподключились.", "Reconnected."));
+    }
+    if (g_reconnectUntil && g_phase == Phase::Idle && NowMs() >= g_nextReconnect) {
+        if (NowMs() > g_reconnectUntil) {
+            g_reconnectUntil = 0;
+            ui::TheChat().AddError(TR("Переподключиться не удалось. Подключитесь через F9, когда хост снова создаст игру.",
+                                      "Could not reconnect. Join through F9 once the host creates the game again."));
+        } else {
+            LOGI("Reconnecting to %s:%u", g_hostAddr.c_str(), g_port);
+            net.Connect(g_hostAddr, g_port, Cfg().nickname, g_password, false);
+            SetPhase(Phase::Connecting);
+            g_connectAttempts = 1;
+        }
     }
     wasOnline = online;
 
@@ -462,6 +512,15 @@ void Update() {
                 if (g_isHosting && g_connectAttempts < 5 && ServerProcessAlive()) {
                     ++g_connectAttempts;
                     net.Connect("127.0.0.1", g_port, Cfg().nickname, g_password, true);
+                } else if (g_reconnectUntil && NowMs() < g_reconnectUntil) {
+                    SetPhase(Phase::Idle);  // the next try in 5 s (Update above)
+                    g_nextReconnect = NowMs() + 5000;
+                } else if (g_resumed) {
+                    // the old server would not take us: it goes, and the next "Host a game" starts a fresh one
+                    StopServerProcess();
+                    g_resumed = false;
+                    Fail(TR("Не удалось подключиться к серверу прошлой игры. Он остановлен: нажмите «Создать игру» ещё раз.",
+                            "Could not join the last game's server. It is stopped: press \"Host a game\" again."));
                 } else {
                     Fail(net.FailReason());
                 }
