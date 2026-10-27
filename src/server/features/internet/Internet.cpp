@@ -11,7 +11,8 @@ namespace {
 Internet* g_self = nullptr;
 }
 
-void Internet::Start(ENetHost* host, uint16_t port, const std::string& turnSpec) {
+void Internet::Start(ENetHost* host, uint16_t port, const std::string& turnSpec, const std::wstring& dataDir) {
+    m_dataDir = dataDir;
     m_host = host;
     m_port = port;
     m_turnEnabled = !turnSpec.empty();
@@ -130,8 +131,20 @@ void Internet::Worker() {
         LOGW("Внешний адрес не определён (нет интернета?). Подключиться можно только по локальной сети или по IP");
         return;
     }
-    std::random_device rd;
-    std::string code = nat::MakeInviteCode(ep, (uint8_t)rd());
+    // NET-07: the key is kept in server-data: a restart with the same external address gives the same code, and a friend's
+    // code from yesterday still works. It was random at every start.
+    uint8_t key = 0;
+    std::vector<uint8_t> saved;
+    std::wstring keyPath = m_dataDir.empty() ? L"" : m_dataDir + L"invite-key.txt";
+    if (!keyPath.empty() && ReadFileBytes(keyPath, saved) && !saved.empty()) {
+        key = (uint8_t)atoi(std::string(saved.begin(), saved.end()).c_str());
+    } else {
+        std::random_device rd;
+        key = (uint8_t)rd();
+        std::string text = std::to_string(key);
+        if (!keyPath.empty()) WriteFileBytes(keyPath, text.data(), text.size());
+    }
+    std::string code = nat::MakeInviteCode(ep, key);
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_code = code;

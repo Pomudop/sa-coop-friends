@@ -97,6 +97,7 @@ int wmain(int argc, wchar_t** argv) {
         else if (a == L"--max") cfg.maxPlayers = atoi(next().c_str());
         else if (a == L"--world" && i + 1 < argc) cfg.worldFile = argv[++i];
         else if (a == L"--new-game") cfg.newGame = true;
+        else if (a == L"--hosted") cfg.hosted = true;
         else if (a == L"--friendly-fire") cfg.friendlyFire = next() == "1";
         else if (a == L"--config" || a == L"--data") ++i;
     }

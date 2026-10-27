@@ -20,7 +20,8 @@ class Internet {
 public:
     ~Internet() { Stop(); }
     // returns at once, the work runs on a thread; turnSpec: optional relay (see TurnRelay)
-    void Start(ENetHost* host, uint16_t port, const std::string& turnSpec);
+    // dataDir: where the invite code's key is kept, so that the same address gives the same code next time (NET-07)
+    void Start(ENetHost* host, uint16_t port, const std::string& turnSpec, const std::wstring& dataDir = L"");
     void Stop();
     void Service();                              // network thread: punch packets
     std::string Code();                          // empty until known
@@ -40,6 +41,7 @@ private:
     nat::UpnpResult m_upnp;
     nat::SignalSubscriber m_signal;
     TurnRelay m_turn;
+    std::wstring m_dataDir;
     bool m_turnEnabled = false;
     bool m_turnFailureTaken = false;
 

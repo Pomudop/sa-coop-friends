@@ -668,6 +668,13 @@ int SeatOfTargetDoor(int door) {
 
 int SeatOrAny(CVehicle* v, int seat) { return v && seat >= 0 && seat < v->MaxPassengers() ? seat : -1; }
 
+bool LeadsOverMe(uint8_t other) {
+    uint8_t host = Net().HostId(), me = Net().MyId();
+    if (other == host) return true;
+    if (me == host) return false;
+    return other < me;
+}
+
 float RemoteDistance(const CVector& p, int8_t area, uint8_t* who) {
     float best = 1e9f;
     for (auto& [id, rp] : Players::Instance().All())
@@ -990,6 +997,7 @@ void Players::HandleEnterCar(uint8_t from, Reader& r) {
     // a car deleted in the last frame is still listed (Vehicles drops it in its OnPreProcess, after the messages)
     if (!rp || !rp->ped || !nv || !Vehicles::Alive(*nv)) return;
     rp->enterTaskMs = NowMs();
+    rp->enterVeh = nv->veh, rp->enterSeat = seat;
     if (seat < 0)
         Cmd(0x05CB).I(rp->pedHandle).I(nv->handle).I(10000).Run();  // TASK_ENTER_CAR_AS_DRIVER
     else
@@ -1298,9 +1306,17 @@ void Players::TryEnterAsPassenger() {
         auto* v = (CVehicle*)(pool->objects + (size_t)i * kVehiclePoolElemSize);
         float d = (v->GetPosition() - mp).Length();
         if (d > 10.0f || v->Status() == 5 /* wrecked */ || v->IsTrain()) continue;  // a train's copy is locked (Trains)
+        // MP-09: a seat another player is getting into is not free yet (it becomes taken only when the animation ends):
+        // three pressing G at the host's car all went for the same front seat
+        auto claimed = [&](int s) {
+            for (auto& [id, rp] : m_remote)
+                if (rp.enterVeh == v && rp.enterSeat == s && NowMs() - rp.enterTaskMs < 4000 && !(rp.ped && rp.ped->InVehicle()))
+                    return true;
+            return false;
+        };
         int freeSeat = -1;
         for (int s = 0; s < v->MaxPassengers() && s < 8; ++s)
-            if (!v->Passengers()[s]) {
+            if (!v->Passengers()[s] && !claimed(s)) {
                 freeSeat = s;
                 break;
             }

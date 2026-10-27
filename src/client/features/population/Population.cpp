@@ -45,15 +45,20 @@ int LocalWantedLevel() {
     return wanted ? Field<int32_t>(wanted, 0x2C) : 0;
 }
 
+// MP-04: a group of players near each other gets its random population from one game only, the leader's
+// (LeadsOverMe: the host, otherwise the smallest player number). Before, only the host's presence switched a partner's
+// generation off, and three partners together far from the host each made their own crowd and traffic.
 void UpdateSuppression() {
     bool want = false;
-    if (Net().Online() && !Net().IsHost() && core::IsPlayerReady()) {
+    if (Net().Online() && core::IsPlayerReady() && LocalWantedLevel() == 0) {
         CPlayerPed* me = FindPlayerPed(0);
-        if (const RemotePlayer* host = Players::Instance().Get(Net().HostId()); host && host->hasState) {
-            float d = (host->state.pos - me->GetPosition()).Length2D();
-            bool sameArea = host->state.area == me->AreaCode();
-            float limit = g_suppress ? kShareRadiusOff : kShareRadius;
-            want = sameArea && d < limit && LocalWantedLevel() == 0;
+        float limit = g_suppress ? kShareRadiusOff : kShareRadius;
+        for (auto& [id, rp] : Players::Instance().All()) {
+            if (!rp.hasState || !LeadsOverMe(id) || rp.state.area != me->AreaCode()) continue;
+            if ((rp.state.pos - me->GetPosition()).Length2D() < limit) {
+                want = true;
+                break;
+            }
         }
     }
     if (Net().Online() && core::IsPlayerReady()) {
@@ -61,7 +66,7 @@ void UpdateSuppression() {
         if (me->AreaCode() == 0) g_guest = false;
         else want = want || (g_guest && OtherPlayerInside(me->GetPosition()));
     }
-    if (want != g_suppress) LOGI("Population generation %s (host nearby: %d)", want ? "handed to the host" : "local", want);
+    if (want != g_suppress) LOGI("Population generation %s", want ? "handed to the group's leader" : "local");
     // The engine adds one ped a frame at the edge of view: the empty streets around would fill slowly. The countdowns of
     // a game's start (and of a respawn) fill them at once, but they place people 10 m away in view and park cars next to
     // the player ("NPCs and cars pop up in front of me"): only behind a dark screen.

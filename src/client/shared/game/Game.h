@@ -476,7 +476,9 @@ bool IsObjectValid(CObject* o);
 // The slots the copies leave to the game. A pool's new gives null when it is full and the script commands that create
 // people, cars and objects crash on it (CREATE_CHAR at 0x467654), a mission's too; the game itself frees its own random
 // people and cars below 8 free slots, never the copies (they are script entities).
-constexpr int kKeepPeds = 12, kKeepVehicles = 10, kKeepObjects = 20;
+// BUG-15: copies stop 20 short of a full ped pool (it was 12): four games' crowds filled it to 12, and the game's own
+// people, tasks and speech crashed on the last free places (three crashes at once, 25.10)
+constexpr int kKeepPeds = 20, kKeepVehicles = 10, kKeepObjects = 20;
 bool HasRoom(CPoolHeader* pool, int keep, const char* what);  // more than keep slots free, or a warning now and then
 
 void RequestModel(int model, int flags = 2 /* STREAMING_GAME_REQUIRED: MarkModelNotNeeded clears it */);

@@ -15,6 +15,7 @@ struct ServerOptions {
     // internet = 1 with a FakeTurn relay: 0 none, 1 it refuses the login, 2 it loses the refresh (turn below is set)
     int fakeTurn = 0;
     std::string turn;  // server.ini's "turn"
+    bool hosted = false;  // --hosted: started by the host's game (SES-05)
 };
 
 class ServerProcess {
@@ -25,6 +26,7 @@ public:
     // its port (its log says so). False if it did not: the log tail tells why.
     bool Start(const std::wstring& exe, const std::wstring& dir, uint16_t port, const ServerOptions& opt);
     void Stop();
+    bool Alive() const { return m_proc.hProcess && WaitForSingleObject(m_proc.hProcess, 0) == WAIT_TIMEOUT; }
     std::string LogTail(int lines) const;
 
 private:

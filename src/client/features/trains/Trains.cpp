@@ -187,14 +187,13 @@ void HandleTrain(uint8_t from, Reader& r) {
     it->second.ms = NowMs();
 }
 
-// the partner near the host makes no random trains: the host's game makes them for both
+// a player near the group's leader makes no random trains: the leader's game makes them for the group
 void SwitchRandomTrains() {
+    // MP-04: the group's leader makes them (the host, else the smallest number), not only the host
     bool off = false;
-    if (!Net().IsHost()) {
-        RemotePlayer* host = Players::Instance().Get(Net().HostId());
-        CPlayerPed* me = FindPlayerPed(0);
-        off = host && host->ped && (host->ped->GetPosition() - me->GetPosition()).Length2D() < kOwnRandomFrom;
-    }
+    CPlayerPed* me = FindPlayerPed(0);
+    for (auto& [id, rp] : Players::Instance().All())
+        if (me && rp.ped && LeadsOverMe(id) && (rp.ped->GetPosition() - me->GetPosition()).Length2D() < kOwnRandomFrom) off = true;
     if (off == g_randomOff) return;
     Ref<uint8_t>(kDisableRandomTrains) = off ? 1 : 0;
     g_randomOff = off;
