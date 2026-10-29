@@ -247,6 +247,38 @@ def link_target(t, debug, objs, dep_objs):
     return True
 
 
+# STB-05 and game fixes: ready ASI mods that go into the package, pinned to a release and its hash (binaries stay out of
+# git, LEGAL.md). SilentPatch fixes the game's own bugs, Open Limit Adjuster raises the pools the partners' copies share
+# (its settings: package/III.VC.SA.LimitAdjuster.ini). Both checked with the mod on the four-copy stand.
+EXTRAS = [
+    {"name": "SilentPatch", "license": "silentpatch",
+     "url": "https://github.com/CookiePLMonster/SilentPatch/releases/download/1.1-BUILD34.1-SA/SilentPatchSA.zip",
+     "sha256": "0837bbdc0548a4a952f924adefd2bb6eacc866407f153844fe1f56995668c42c",
+     "files": ["SilentPatchSA.asi", "SilentPatchSA.ini"]},
+    {"name": "OpenLimitAdjuster", "license": "open-limit-adjuster",
+     "url": "https://github.com/ThirteenAG/limit_adjuster_gta3vcsa/releases/download/v1.7.2/III.VC.SA.LimitAdjuster.zip",
+     "sha256": "4795a84d6b1a3c35715ba579d2bbe491daa69ffa17e1b8c350a9265d3190e1c6",
+     "files": ["III.VC.SA.LimitAdjuster.asi"]},
+]
+
+
+def fetch_extra(extra):
+    """The release zip of an extra (downloaded once into build/extras, checked against its hash)."""
+    import hashlib
+    import urllib.request
+    path = BUILD / "extras" / (extra["name"] + ".zip")
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        print(f"  [extras] downloading {extra['url']}")
+        with urllib.request.urlopen(extra["url"]) as r:
+            path.write_bytes(r.read())
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest != extra["sha256"]:
+        path.unlink()
+        raise SystemExit(f"{extra['name']}: hash {digest} differs from the pinned one")
+    return path
+
+
 def assemble_dist(debug):
     """dist/SA-COOP mirrors the install layout (copied over the game folder) + a zip of it."""
     src = BUILD / ("debug" if debug else "release") / "bin"
@@ -270,6 +302,13 @@ def assemble_dist(debug):
     shutil.copy2(ROOT / "NOTICE.md", licenses / "NOTICE.txt")  # fork: who made what, the original author first
     shutil.copy2(ROOT / "third_party" / "enet" / "LICENSE", licenses / "ENet.txt")
     shutil.copy2(ROOT / "third_party" / "minhook" / "LICENSE.txt", licenses / "MinHook.txt")
+    import zipfile
+    for extra in EXTRAS:
+        with zipfile.ZipFile(fetch_extra(extra)) as z:
+            names = {Path(n).name: n for n in z.namelist()}
+            for f in extra["files"]:
+                (dist / f).write_bytes(z.read(names[f]))
+        shutil.copy2(ROOT / "third_party" / extra["license"] / "LICENSE", licenses / f"{extra['name']}.txt")
     archive = shutil.make_archive(str(ROOT / "dist" / "SA-COOP"), "zip", dist)
     print(f"dist assembled in {dist.relative_to(ROOT)} and {Path(archive).relative_to(ROOT)}")
 

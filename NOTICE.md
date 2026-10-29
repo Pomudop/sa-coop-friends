@@ -38,6 +38,8 @@ Pull request'ы сообщества из репозитория автора (�
 | [ENet](http://enet.bespin.org), © Lee Salzman | MIT | `third_party/enet/LICENSE` |
 | [MinHook](https://github.com/TsudaKageyu/minhook), © Tsuda Kageyu | BSD 2-Clause | `third_party/minhook/LICENSE.txt` |
 | [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) | своя | скачивается при сборке, в репозиторий не входит |
+| [SilentPatch](https://github.com/CookiePLMonster/SilentPatch), © Adrian Zdanowicz (Silent) | MIT | `third_party/silentpatch/LICENSE`; `SilentPatchSA.asi` скачивается при сборке и кладётся в архив релиза без изменений |
+| [Open Limit Adjuster](https://github.com/ThirteenAG/limit_adjuster_gta3vcsa), © ThirteenAG | MIT | `third_party/open-limit-adjuster/LICENSE`; `.asi` скачивается при сборке, настройки — `package/III.VC.SA.LimitAdjuster.ini` |
 
 Адреса и структуры движка сверялись с открытыми проектами [gta-reversed](https://github.com/gta-reversed/gta-reversed)
 и [plugin-sdk](https://github.com/DK22Pac/plugin-sdk) как со справочником; их код в репозиторий не копируется.
