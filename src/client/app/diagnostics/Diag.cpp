@@ -49,6 +49,21 @@ public:
         mem::HookFn(0x619B60, &HookRsEventHandler, &g_origEvent, "RsEventHandler");
         mem::HookFn(0x5BA160, &HookInitialiseEssentialsAfterRW, &g_origEssentials, "CGame::InitialiseEssentialsAfterRW");
     }
+    // STB-05: the package brings SilentPatch and Open Limit Adjuster (tools/build.py, EXTRAS). Whether they loaded and the
+    // pools the copies of the partners' people and cars share: a log sent in after a crash tells at once
+    void OnGameStarted() override {
+        static bool told = false;
+        if (told) return;
+        told = true;
+        bool sp = GetModuleHandleW(L"SilentPatchSA.asi") != nullptr;
+        bool la = GetModuleHandleW(L"III.VC.SA.LimitAdjuster.asi") != nullptr;
+        game::CPoolHeader* peds = game::PedPool();
+        game::CPoolHeader* cars = game::VehiclePool();
+        LOGI("SilentPatch %s, Open Limit Adjuster %s; pools: %d people, %d vehicles", sp ? "on" : "off", la ? "on" : "off",
+             peds ? peds->size : 0, cars ? cars->size : 0);
+        if (!la || (peds && peds->size <= 140))
+            LOGW("The pools are the game's own (140 people, 110 vehicles): four players fill them sooner");
+    }
 };
 
 DiagModule g_diag;
