@@ -40,6 +40,7 @@ struct NetVehicle {
     uint8_t origBy = 0;        // what this game had it created by before it became a mirror here (0: spawned as one)
     bool heldHere = false;     // a script of this game held it when it became a mirror here
     bool crashProofHere = false;  // made collision-proof here as a mirror (taken off when it is this game's again)
+    bool damageShown = false;     // mirror: the owner's damage was put on it once (its later losses fly off)
 
     bool hasState = false;
     VehicleState state;
@@ -94,6 +95,7 @@ private:
     void Announce(const NetVehicle& nv);
     bool CreateMirror(const VehicleSpawn& sp);
     void ScanTraffic();
+    void DropFarMirrors();
     void HandleCreate(uint8_t from, Reader& r);
     void HandleRemove(uint8_t from, Reader& r);
     void HandleSync(uint8_t from, Reader& r);
@@ -121,7 +123,9 @@ private:
 
     std::map<uint16_t, NetVehicle> m_byId;
     std::map<game::CVehicle*, uint16_t> m_byPtr;
-    std::map<uint16_t, VehicleSpawn> m_pending;  // announced mirrors waiting for their model to stream in
+    // announced mirrors waiting for their model to stream in, or for our player to come near (MP-18)
+    std::map<uint16_t, VehicleSpawn> m_pending;
+    uint64_t m_farCheckMs = 0;
     std::map<game::CVehicle*, uint8_t> m_giveAway;  // to hand over after the population code (vehicle -> player)
     struct Inherited {
         uint8_t heir;

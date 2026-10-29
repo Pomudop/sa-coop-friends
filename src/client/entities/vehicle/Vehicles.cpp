@@ -33,6 +33,16 @@ constexpr uint8_t STATUS_PHYSICS = 3, STATUS_WRECKED = 5;
 constexpr uint8_t VEHICLE_CREATED_RANDOM = 1, VEHICLE_CREATED_MISSION = 2, VEHICLE_CREATED_PARKED = 3;
 constexpr float kTrafficIn = 170.0f;   // owned vehicles closer than this to the partner are announced (> car spawn range)
 constexpr float kTrafficOut = 220.0f;  // and dropped from the network beyond this
+// MP-18: a copy is made only near this game's player and goes beyond kMirrorOut. An owner announces its cars near any
+// other player, and with four players every game made copies of the traffic around each of the others, kilometres
+// away: its pool filled with them and its own streets stayed empty ("no life when we split up"). The far ones wait in
+// m_pending, kept where the owner's states put them. A script's car is always made, and a copy with a player in it stays.
+constexpr float kMirrorIn = 200.0f, kMirrorOut = 260.0f;
+
+bool NearHere(const CVector& p, float r) {
+    CPlayerPed* me = FindPlayerPed(0);
+    return !me || (p - me->GetPosition()).Length2D() < r;
+}
 
 void SetVehicleCreatedBy(CVehicle* v, uint8_t by) { CallMethod<0x6D5D70>(v, (int)by); }  // keeps CCarCtrl counters right
 
@@ -71,11 +81,37 @@ bool HasDamageManager(CVehicle* v) {  // CAutomobile and its subclasses
     return false;
 }
 
+// BUG-18: CAutomobile::SetupDamageAfterLoad throws every missing door, bonnet and bumper off the car again
+// (CAutomobile::SpawnFlyingComponent): a copy rebuilt for each new dent dropped all its lost parts once more ("a door
+// breaks and several parts fall"). While a copy is rebuilt only the parts its owner's car just lost fly off.
+int g_flyingAllowed[16] = {};
+int g_flyingAllowedCount = -1;  // -1: no copy is being rebuilt
+using SpawnFlyingFn = void*(__fastcall*)(CVehicle*, void*, int, uint32_t);
+SpawnFlyingFn g_origSpawnFlying = nullptr;
+void* __fastcall HookSpawnFlyingComponent(CVehicle* v, void* edx, int node, uint32_t type) {
+    if (g_flyingAllowedCount >= 0 &&
+        std::find(g_flyingAllowed, g_flyingAllowed + g_flyingAllowedCount, node) == g_flyingAllowed + g_flyingAllowedCount)
+        return nullptr;  // as when the temporary objects run out: its callers expect it
+    return g_origSpawnFlying(v, edx, node, type);
+}
+
 // shows the damage of the owner's vehicle: parts are reset, then rebuilt from the damage state the way
-// a loaded save does it (no debris flies off, the parts are just gone or bent)
-void ApplyDamage(CVehicle* v, const uint8_t (&damage)[20]) {
+// a loaded save does it; quiet (the copy's first look) no debris flies off, the parts are just gone or bent
+void ApplyDamage(CVehicle* v, const uint8_t (&damage)[20], bool quiet) {
     uint8_t* dm = (uint8_t*)v + kDamageManager + 4;
     if (!memcmp(dm, damage, sizeof(damage))) return;
+    g_flyingAllowedCount = 0;
+    if (!quiet) {
+        for (int d = 0; d < 6; ++d)  // doors: DAMSTATE_NOTPRESENT
+            if (damage[5 + d] == 4 && dm[5 + d] != 4)
+                g_flyingAllowed[g_flyingAllowedCount++] = Call<0x6C26F0, int>(d);  // CDamageManager::GetCarNodeIndexFromDoor
+        uint32_t was = 0, now = 0;  // CDamageManager::m_nPanelsStatus, 4 bits a panel
+        memcpy(&was, dm + 15, 4);
+        memcpy(&now, damage + 15, 4);
+        for (int p = 0; p < 7; ++p)  // panels, bumpers among them: DAMSTATE_OPENED_DAMAGED
+            if (((now >> (4 * p)) & 15) == 3 && ((was >> (4 * p)) & 15) != 3)
+                g_flyingAllowed[g_flyingAllowedCount++] = Call<0x6C26A0, int>(p);  // CDamageManager::GetCarNodeIndexFromPanel
+    }
     CallMethod<0x6A3440>(v);  // CAutomobile::Fix
     memcpy(dm, damage, sizeof(damage));
     switch (v->VehicleSubClass()) {  // SetupDamageAfterLoad of the exact class
@@ -84,6 +120,7 @@ void ApplyDamage(CVehicle* v, const uint8_t (&damage)[20]) {
     case VEHICLE_TYPE_QUAD: CallMethod<0x6CE340>(v); break;
     default: CallMethod<0x6B3E90>(v); break;
     }
+    g_flyingAllowedCount = -1;
 }
 
 VehicleLook CaptureLook(CVehicle* v) {
@@ -143,6 +180,7 @@ void Vehicles::OnInstallHooks() {
     mem::HookFn(0x437C20, &HookSteerAICarWithPhysics, &g_origSteerAI, "CCarCtrl::SteerAICarWithPhysics");
     mem::HookFn(0x4F61E0, &HookGetHornState, &g_origHornState, "CAEVehicleAudioEntity::GetHornState");
     mem::HookFn(0x6C45B0, &HookAddSearchLight, &g_origAddSearchLight, "CHeli::AddHeliSearchLight");
+    mem::HookFn(0x6A8580, &HookSpawnFlyingComponent, &g_origSpawnFlying, "CAutomobile::SpawnFlyingComponent");
     Net().SetHandler(proto::G_VEH_CREATE, [](uint8_t from, Reader& r) { Instance().HandleCreate(from, r); });
     Net().SetHandler(proto::G_VEH_REMOVE, [](uint8_t from, Reader& r) { Instance().HandleRemove(from, r); });
     Net().SetHandler(proto::G_VEH_SYNC, [](uint8_t from, Reader& r) { Instance().HandleSync(from, r); });
@@ -264,8 +302,10 @@ void Vehicles::ApplyLook(NetVehicle& nv) {
     // CVehicle::SetRemap reads the model's four paintjobs at that index, unchecked
     if (nv.look.paintjob >= 0 && nv.look.paintjob < 4 && pj != nv.look.paintjob)
         Cmd(0x06ED).I(h).I(nv.look.paintjob).Run();  // GIVE_VEHICLE_PAINTJOB
-    if (HasDamageManager(v)) ApplyDamage(v, nv.look.damage);
-    else if (v->VehicleSubClass() == VEHICLE_TYPE_BIKE) memcpy((uint8_t*)v + kBikeTyres, nv.look.bikeTyres, 2);
+    if (HasDamageManager(v)) {
+        ApplyDamage(v, nv.look.damage, !nv.damageShown);
+        nv.damageShown = true;
+    } else if (v->VehicleSubClass() == VEHICLE_TYPE_BIKE) memcpy((uint8_t*)v + kBikeTyres, nv.look.bikeTyres, 2);
     // the lock it had when it became known stayed: a mission car locked then held the partner who got in, after the
     // mission it was opened only in the owner's game (the Savanna of "Cesar Vialpando"); same rule as at the spawn
     v->DoorLock() = nv.look.lock == 2 && !nv.script ? 1 : nv.look.lock;
@@ -365,6 +405,10 @@ void Vehicles::HandleCreate(uint8_t from, Reader& r) {
     }
     if (!IsVehicleModel(sp.model)) {
         LOGW("Vehicle %04X has an unknown model %d", sp.netId, sp.model);
+        return;
+    }
+    if (!sp.script && !NearHere(sp.pos, kMirrorIn)) {
+        m_pending[sp.netId] = sp;  // made when our player comes near (OnPreProcess)
         return;
     }
     if (CreateMirror(sp)) m_pending.erase(sp.netId);
@@ -629,7 +673,15 @@ void Vehicles::HandleSync(uint8_t from, Reader& r) {
 
 void Vehicles::ApplyDriverState(uint8_t from, uint16_t netId, const VehicleState& st) {
     NetVehicle* nv = Find(netId);
-    if (!nv || nv->owner != from) return;
+    if (!nv) {
+        if (auto it = m_pending.find(netId); it != m_pending.end() && it->second.owner == from) {
+            it->second.pos = st.pos;  // waits far from our player (MP-18): made where it is now
+            it->second.rot = st.rot;
+            it->second.health = st.health;
+        }
+        return;
+    }
+    if (nv->owner != from) return;
     if (nv->hasState && (int32_t)(st.time - nv->lastTime) < 0) return;
     if ((st.flags ^ (nv->hasState ? nv->state.flags : 0)) & VehicleState::F_HORN)
         LOGD("Vehicle %04X: horn %s", netId, (st.flags & VehicleState::F_HORN) ? "on" : "off");
@@ -646,7 +698,10 @@ void Vehicles::HandleOwner(uint8_t from, Reader& r) {
     uint8_t owner = r.U8();
     if (!r.Ok()) return;
     NetVehicle* nv = Find(id);
-    if (!nv) return;
+    if (!nv) {
+        if (auto it = m_pending.find(id); it != m_pending.end()) it->second.owner = owner;  // its states come from there now
+        return;
+    }
     CPlayerPed* me = FindPlayerPed(0);
     bool iDrive = me && nv->veh && me->InVehicle() && me->Vehicle() == nv->veh && nv->veh->Driver() == me;
     if (iDrive && owner != Net().MyId()) {
@@ -837,10 +892,43 @@ void Vehicles::ApplyMirror(NetVehicle& nv, float dt) {
     ApplyHydraulics(v, st);
 }
 
+// MP-18: a copy our player left far behind goes and waits in m_pending (made again when it comes near)
+void Vehicles::DropFarMirrors() {
+    if (NowMs() - m_farCheckMs < 1000) return;
+    m_farCheckMs = NowMs();
+    std::vector<uint16_t> far;
+    for (auto& [id, nv] : m_byId) {
+        if (!IsMirror(nv) || nv.script || !nv.createdByUs || nv.heldHere || !Alive(nv) || HasPlayerInside(nv.veh) ||
+            nv.veh->Status() == STATUS_WRECKED || NearHere(nv.veh->GetPosition(), kMirrorOut))
+            continue;
+        if (Field<CVehicle*>(nv.veh, 0x4C4) || Field<CVehicle*>(nv.veh, 0x4C8)) continue;  // towed or towing
+        far.push_back(id);
+    }
+    for (uint16_t id : far) {
+        NetVehicle& nv = m_byId[id];
+        VehicleSpawn sp;
+        sp.netId = id;
+        sp.model = nv.model;
+        sp.owner = nv.owner;
+        sp.pos = nv.hasState ? nv.state.pos : nv.veh->GetPosition();
+        if (nv.hasState) sp.rot = nv.state.rot;
+        else sp.rot = Quat::FromMatrix(*nv.veh->Matrix());
+        memcpy(sp.colors, nv.veh->Colors(), 4);
+        sp.health = nv.veh->Health();
+        sp.area = nv.veh->AreaCode();
+        sp.lockState = nv.hasLook ? nv.look.lock : (uint8_t)nv.veh->DoorLock();
+        Forget(id, true);
+        m_pending[id] = sp;
+    }
+    if (!far.empty()) LOGD("%d far copies of cars wait for our player to come near", (int)far.size());
+}
+
 void Vehicles::OnPreProcess() {
     if (!Net().Online() || !core::IsPlayerReady()) return;
     for (auto it = m_pending.begin(); it != m_pending.end();)
-        it = CreateMirror(it->second) ? m_pending.erase(it) : std::next(it);
+        it = (it->second.script || NearHere(it->second.pos, kMirrorIn)) && CreateMirror(it->second) ? m_pending.erase(it)
+                                                                                               : std::next(it);
+    DropFarMirrors();
     float dt = TimeStep() / 50.0f;
     std::vector<uint16_t> dead;
     for (auto& [id, nv] : m_byId) {

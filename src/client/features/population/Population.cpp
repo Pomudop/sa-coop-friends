@@ -30,6 +30,10 @@ constexpr float kShareRadius = 60.0f;
 constexpr float kShareRadiusOff = 90.0f;  // hysteresis
 
 bool g_suppress = false;
+// MP-19: the wish has to hold this long before generation changes hands: it went back and forth several times a second
+// around a scene or a respawn (the player not ready, a star of wanted level for a moment), and people came and went
+constexpr uint64_t kSwitchMs = 2000;
+uint64_t g_wantSinceMs = 0;
 // in an interior only the game of the player who came in first makes its people: the second one filled the attractors
 // the copies stand on (copies use none) before they were even spawned, and the host's generation never stopped
 bool g_guest = false;
@@ -66,6 +70,9 @@ void UpdateSuppression() {
         if (me->AreaCode() == 0) g_guest = false;
         else want = want || (g_guest && OtherPlayerInside(me->GetPosition()));
     }
+    if (want == g_suppress || !Net().Online()) g_wantSinceMs = 0;
+    else if (!g_wantSinceMs) g_wantSinceMs = NowMs();
+    if (want != g_suppress && Net().Online() && NowMs() - g_wantSinceMs < kSwitchMs) return;
     if (want != g_suppress) LOGI("Population generation %s", want ? "handed to the group's leader" : "local");
     // The engine adds one ped a frame at the edge of view: the empty streets around would fill slowly. The countdowns of
     // a game's start (and of a respawn) fill them at once, but they place people 10 m away in view and park cars next to
@@ -276,6 +283,20 @@ void __fastcall HookSetupInteriorPeds(void* group, void* edx) {  // InteriorGrou
 int g_skipped[2] = {};  // spots skipped for the other player's view: people, cars (logged every 10 s)
 uint64_t g_skippedMs = 0;
 
+// MP-20: a spot nearer another player than ours is that player's game's to fill. Two players 60-150 m apart each
+// filled the ground between them as if alone: twice the people and cars there, and each game's copies of the other's
+// stood among its own ("a crowd and a jam out of nowhere").
+bool OthersGround(const CVector& p) {
+    if (!Net().Online() || !core::IsPlayerReady()) return false;
+    CPlayerPed* me = FindPlayerPed(0);
+    float mine = (p - me->GetPosition()).Length2D();
+    for (auto& [id, rp] : Players::Instance().All())
+        if (rp.hasState && rp.state.area == me->AreaCode() && NowMs() - rp.stateRecvMs < 1500 &&
+            (rp.state.pos - p).Length2D() < mine)
+            return true;
+    return false;
+}
+
 bool SeenByOther(const CVector& p, float within) {
     if (!Net().Online() || !core::IsPlayerReady() || !RemoteSees(p, FindPlayerPed(0)->AreaCode(), within)) return false;
     ++g_skipped[within > 50.0f ? 1 : 0];
@@ -290,14 +311,15 @@ bool SeenByOther(const CVector& p, float within) {
 using ClearForPedFn = bool(__cdecl*)(const CVector&, float, int, CEntity**, bool, bool, bool);
 ClearForPedFn g_origClearForPed = nullptr;
 bool __cdecl HookClearForPed(const CVector& p, float r, int n, CEntity** out, bool cars, bool peds, bool objects) {
-    return !SeenByOther(p, 42.5f) && g_origClearForPed(p, r, n, out, cars, peds, objects);
+    return !OthersGround(p) && !SeenByOther(p, 42.5f) && g_origClearForPed(p, r, n, out, cars, peds, objects);
 }
 
 using CarCoorsFn = bool(__cdecl*)(CVector, float, float, float, bool, float, float, CVector*, void*, void*, float*, bool, bool);
 CarCoorsFn g_origCarCoors = nullptr;
 bool __cdecl HookCarCoors(CVector at, float r, float dx, float dy, bool anyDir, float a6, float a7, CVector* out, void* node1,
                           void* node2, float* dist, bool invert, bool room) {
-    return g_origCarCoors(at, r, dx, dy, anyDir, a6, a7, out, node1, node2, dist, invert, room) && !SeenByOther(*out, 90.0f);
+    return g_origCarCoors(at, r, dx, dy, anyDir, a6, a7, out, node1, node2, dist, invert, room) && !OthersGround(*out) &&
+           !SeenByOther(*out, 90.0f);
 }
 
 class Population : public Module {

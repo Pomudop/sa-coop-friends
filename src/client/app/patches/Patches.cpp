@@ -93,9 +93,18 @@ int __cdecl HookIdleEvent(int event, void* param) {
 using UpdatePadsFn = void(__cdecl*)();
 UpdatePadsFn g_origUpdatePads = nullptr;
 void __cdecl HookUpdatePads() {  // CPad::UpdatePads
-    g_origUpdatePads();
     HWND hwnd = (HWND)game::GameWindow();
-    if (!hwnd || GetForegroundWindow() == hwnd) return;
+    bool front = hwnd && GetForegroundWindow() == hwnd;
+    // BUG-17: back from the pause menu the game often stayed deaf until Alt+Tab. CPad::UpdateMouse and the keys read
+    // nothing while ForegroundApp is down, and only a new focus raised it again (WM_SETFOCUS, see Input) while the
+    // window was in front all along: the window being in front is what counts
+    if (front && !game::IsForeground()) {
+        game::Ref<uint8_t>(game::addr::ForegroundApp) = 1;
+        LOGI("The window is in front but the game took itself for the background: input on again (menu %d)",
+             (int)game::MenuActive());
+    }
+    g_origUpdatePads();
+    if (!hwnd || front) return;
     for (int i = 0; i < 2; ++i) memset(&game::GetPad(i)->NewState, 0, sizeof(game::CControllerState));
     memset((void*)0xB73190, 0, 0x270);  // CPad::NewKeyState (CKeyboardState)
     memset((void*)0xB72CB0, 0, 0x270);  // CPad::TempKeyState: what the window's key events gathered

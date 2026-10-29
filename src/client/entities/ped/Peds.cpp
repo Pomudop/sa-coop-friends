@@ -43,6 +43,14 @@ struct Reg {
 // vehicle occupants use the vehicle ranges so traffic is never seen without its driver
 float SyncIn(CPed* p) { return p->InVehicle() ? 170.0f : 120.0f; }
 float SyncOut(CPed* p) { return p->InVehicle() ? 220.0f : 150.0f; }
+// MP-18: a copy is made only near this game's player and goes beyond kCopyOut. An owner announces its people near any
+// other player: with four players this game held the crowds around each of the others, far away, and its own streets
+// had no room left. A copy in a car follows its car (Vehicles); a special character (a story person) is always made.
+constexpr float kCopyIn = 160.0f, kCopyOut = 210.0f;
+bool NearUs(const CVector& p, float r) {
+    CPlayerPed* me = FindPlayerPed(0);
+    return !me || (p - me->GetPosition()).Length2D() < r;
+}
 constexpr int kSpecialFirst = 290, kSpecialLast = 299;
 constexpr int kEmptyDecisionMaker = 65542;  // SET_CHAR_DECISION_MAKER template "Empty"
 constexpr int TASK_ENTER_CAR_AS_PASSENGER = 700, TASK_ENTER_CAR_AS_DRIVER = 701, TASK_LEAVE_CAR = 704;
@@ -639,6 +647,8 @@ CPed* Peds::SpawnMirror(NetPed& np) {
         // mission's person, another copy), and RequestSpecialModel took the model from under them
         model = SpecialModelFor(np.special);
         if (model < 0) return nullptr;
+    } else if (!(st.flags & PedSyncState::F_IN_VEHICLE) && !NearUs(st.pos, kCopyIn)) {
+        return nullptr;  // far from our player: made when it comes near (retried from ApplyMirror)
     } else if (!IsPedModel(model)) {
         static std::set<int> told;
         if (told.insert(model).second) LOGW("Ped %04X of player %d has model %d this game lacks: its copy is not shown", np.netId, np.owner, model);
@@ -901,6 +911,15 @@ void Peds::ApplyMirror(NetPed& np) {
     if (!IsAlive(np)) {  // deleted by the game (should not happen to mission peds): spawn again
         m_byPtr.erase(ped);
         np.ped = nullptr;
+        return;
+    }
+    // MP-18: our player left it far behind: it goes, and comes again near (a body stays where it fell)
+    if ((np.model < kSpecialFirst || np.model > kSpecialLast) && !ped->InVehicle() && !(st.flags & PedSyncState::F_IN_VEHICLE) &&
+        !np.deadApplied && !IsPedDead(ped) && !NearUs(ped->GetPosition(), kCopyOut)) {
+        Cmd(0x009B).I(np.handle).Run();  // DELETE_CHAR
+        m_byPtr.erase(ped);
+        np.ped = nullptr;
+        np.handle = -1;
         return;
     }
     ped->AreaCode() = st.area;
